@@ -42,6 +42,7 @@ import {
   Image as ImageIcon,
   CloudCheck,
   RefreshCw,
+  Upload,
 } from 'lucide-react';
 import {
   db,
@@ -84,7 +85,10 @@ import {
 import { ResearchSubmissionModal } from './components/ResearchSubmissionModal';
 import { ResearchDetailModal } from './components/ResearchDetailModal';
 import { ResearcherProfilesView } from './components/ResearcherProfilesView';
-import { AdminEvaluationView } from './components/AdminEvaluationView';
+import {
+  AdminEvaluationView,
+  resolveOverviewImageLink,
+} from './components/AdminEvaluationView';
 import { LatestAdditionsWidget } from './components/LatestAdditionsWidget';
 import { NotifyMeModal } from './components/NotifyMeModal';
 import { OverviewAnalyticsSection } from './components/OverviewAnalyticsSection';
@@ -774,8 +778,13 @@ export default function App() {
   const activeOverviewItems = useMemo(() => {
     const map = new Map<string, OverviewItemRecord>();
     INITIAL_OVERVIEW_ITEMS.forEach((item) => map.set(item.id, item));
-    localOverviewItems.forEach((item) => map.set(item.id, item));
     cloudOverviewItems.forEach((item) => map.set(item.id, item));
+    localOverviewItems.forEach((item) => {
+      const existing = map.get(item.id);
+      if (!existing || item.updatedAtIso >= existing.updatedAtIso) {
+        map.set(item.id, item);
+      }
+    });
     return Array.from(map.values())
       .filter((item) => !item.isDeleted)
       .sort((a, b) => a.displayOrder - b.displayOrder);
@@ -1005,11 +1014,17 @@ export default function App() {
     const record: OverviewItemRecord = {
       ...payload,
       id: cleanId,
+      imageUrl: resolveOverviewImageLink(payload.imageUrl),
       portalId: 'bnhs',
       updatedByUid: currentUser?.uid || 'admin_local',
       createdAtIso: nowIso,
       updatedAtIso: nowIso,
     };
+
+    setImgErrors((prev) => ({
+      ...prev,
+      [payload.itemType === 'hero' ? 'hero' : cleanId]: false,
+    }));
 
     setLocalOverviewItems((prev) => [
       ...prev.filter((i) => i.id !== cleanId),
@@ -1058,6 +1073,88 @@ export default function App() {
     showToast('Overview section updated.');
   };
 
+  // Inline Quick-Editor & Direct Photo Upload for the Institutional Research Repository Picture
+  const [isEditingHeroInline, setIsEditingHeroInline] = useState<boolean>(false);
+  const [heroDraftTitle, setHeroDraftTitle] = useState<string>('');
+  const [heroDraftSubtitle, setHeroDraftSubtitle] = useState<string>('');
+  const [heroDraftDesc, setHeroDraftDesc] = useState<string>('');
+  const [heroDraftImageUrl, setHeroDraftImageUrl] = useState<string>('');
+
+  const openInlineHeroEditor = () => {
+    setHeroDraftTitle(heroOverviewItem.title);
+    setHeroDraftSubtitle(heroOverviewItem.subtitle);
+    setHeroDraftDesc(heroOverviewItem.description);
+    setHeroDraftImageUrl(heroOverviewItem.imageUrl);
+    setIsEditingHeroInline(true);
+  };
+
+  const handleDirectOverviewPhotoUpload = (
+    item: OverviewItemRecord,
+    e: React.ChangeEvent<HTMLInputElement>,
+    updateDraftOnly: boolean = false
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      showToast('Please select a valid image file (JPG, PNG, WEBP, GIF).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxW = 1000;
+        const maxH = 680;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxW) {
+          height = Math.round((height * maxW) / width);
+          width = maxW;
+        }
+        if (height > maxH) {
+          width = Math.round((width * maxH) / height);
+          height = maxH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.84);
+          setImgErrors((p) => ({
+            ...p,
+            [item.itemType === 'hero' ? 'hero' : item.id]: false,
+          }));
+          if (updateDraftOnly) {
+            setHeroDraftImageUrl(compressedDataUrl);
+          } else {
+            handleSaveOverviewItem({
+              ...item,
+              imageUrl: compressedDataUrl,
+            });
+          }
+        } else {
+          if (updateDraftOnly) {
+            setHeroDraftImageUrl(reader.result as string);
+          } else {
+            handleSaveOverviewItem({
+              ...item,
+              imageUrl: reader.result as string,
+            });
+          }
+        }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   const handleDeleteOverviewItem = async (itemId: string) => {
     const target = activeOverviewItems.find((i) => i.id === itemId);
     if (!target) return;
@@ -1069,8 +1166,31 @@ export default function App() {
   };
 
   const handleResetOverviewDefaults = async () => {
-    setLocalOverviewItems([]);
-    localStorage.removeItem(LOCAL_OVERVIEW_ITEMS_KEY);
+    const nowIso = new Date().toISOString();
+    const baselineIds = new Set(INITIAL_OVERVIEW_ITEMS.map((i) => i.id));
+    const restoredLocals: OverviewItemRecord[] = [
+      ...INITIAL_OVERVIEW_ITEMS.map((item) => ({
+        ...item,
+        isDeleted: false,
+        updatedAtIso: nowIso,
+      })),
+      ...cloudOverviewItems
+        .filter((c) => !baselineIds.has(c.id))
+        .map((c) => ({
+          ...c,
+          isDeleted: true,
+          updatedAtIso: nowIso,
+        })),
+    ];
+
+    setImgErrors({});
+    setLocalOverviewItems(restoredLocals);
+    try {
+      localStorage.setItem(LOCAL_OVERVIEW_ITEMS_KEY, JSON.stringify(restoredLocals));
+    } catch {
+      // ignore storage quota errors
+    }
+
     if (auth.currentUser && isCloudAdmin) {
       for (const cloudItem of cloudOverviewItems) {
         try {
@@ -1079,8 +1199,29 @@ export default function App() {
           // ignore
         }
       }
+      for (const baseItem of INITIAL_OVERVIEW_ITEMS) {
+        try {
+          await setDoc(doc(db, 'overview_items', baseItem.id), {
+            portalId: 'bnhs',
+            itemType: baseItem.itemType,
+            code: baseItem.code,
+            title: baseItem.title,
+            subtitle: baseItem.subtitle,
+            description: baseItem.description,
+            imageUrl: baseItem.imageUrl,
+            divisionLink: baseItem.divisionLink,
+            displayOrder: baseItem.displayOrder,
+            isDeleted: false,
+            updatedByUid: auth.currentUser.uid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch {
+          // ignore
+        }
+      }
     }
-    showToast('Overview section restored to institutional defaults.');
+    showToast('Default Overview restored.');
   };
 
   // Navigation helper to switch division view
@@ -2091,21 +2232,8 @@ export default function App() {
             <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch bg-white border border-zinc-200 p-6 md:p-10">
               <div className="lg:col-span-7 flex flex-col justify-between space-y-6">
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="text-xs text-zinc-500">
-                      {heroOverviewItem.code}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveSection('directory');
-                        setDirectoryTab('admin');
-                      }}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
-                    >
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      <span>Admin: Edit Overview / Upload Photo</span>
-                    </button>
+                  <div className="text-xs text-zinc-500">
+                    {heroOverviewItem.code}
                   </div>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                     <img
@@ -2166,11 +2294,11 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Right Column Hero Visual (Customizable via Admin Photo Upload) */}
+              {/* Right Column Hero Visual */}
               <div className="lg:col-span-5 min-h-[280px] relative overflow-hidden bg-[#6B1420]">
-                {!imgErrors.hero ? (
+                {!imgErrors.hero && (heroOverviewItem.imageUrl || PORTAL_IMAGES.heroCampus) ? (
                   <img
-                    src={heroOverviewItem.imageUrl || PORTAL_IMAGES.heroCampus}
+                    src={resolveOverviewImageLink(heroOverviewItem.imageUrl || PORTAL_IMAGES.heroCampus)}
                     alt={heroOverviewItem.title}
                     referrerPolicy="no-referrer"
                     onError={() => setImgErrors((p) => ({ ...p, hero: true }))}
@@ -2187,7 +2315,7 @@ export default function App() {
                     </p>
                   </div>
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent flex flex-col justify-end p-6 text-white">
+                <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/80 via-black/25 to-transparent flex flex-col justify-end p-6 text-white">
                   <div className="text-xs text-amber-300 font-medium">
                     Institutional Research Repository · SY 2025–2027
                   </div>
@@ -2292,7 +2420,15 @@ export default function App() {
                     Three Major Research Divisions at Barobo National High School
                   </h2>
                 </div>
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleResetOverviewDefaults}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Restore Default Overview</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -2302,7 +2438,7 @@ export default function App() {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
-                    <span>Add / Edit / Delete / Upload Photo in Admin</span>
+                    <span>Edit / Delete / Upload Photo in Admin</span>
                   </button>
                 </div>
               </div>
@@ -2326,9 +2462,9 @@ export default function App() {
                     >
                       <div>
                         <div className="aspect-[4/3] w-full bg-zinc-100 relative overflow-hidden">
-                          {!imgErrors[cardItem.id] ? (
+                          {cardItem.imageUrl && !imgErrors[cardItem.id] ? (
                             <img
-                              src={cardItem.imageUrl}
+                              src={resolveOverviewImageLink(cardItem.imageUrl)}
                               alt={cardItem.title}
                               referrerPolicy="no-referrer"
                               onError={() =>
@@ -2337,13 +2473,13 @@ export default function App() {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-[#6B1420] text-white p-6 text-center">
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-[#6B1420] text-white p-6 text-center">
                               <span className="font-display text-lg">
                                 {cardItem.title}
                               </span>
                             </div>
                           )}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-4">
+                          <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end p-4">
                             <span className="text-xs font-mono text-white">
                               {cardItem.code} · {cardItem.subtitle} · {count} Studies
                             </span>
@@ -2360,7 +2496,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="px-6 pb-6 pt-3 border-t border-zinc-100 flex items-center justify-between">
+                      <div className="px-6 pb-6 pt-3 border-t border-zinc-100 flex items-center justify-between gap-2 flex-wrap">
                         {targetDiv ? (
                           <button
                             type="button"
@@ -2384,13 +2520,24 @@ export default function App() {
                           </button>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => handleOpenSubmitModal(targetDiv || 'basic')}
-                          className="text-xs font-medium text-zinc-600 hover:text-zinc-900"
-                        >
-                          + Submit to Division
-                        </button>
+                        <div className="flex items-center gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSubmitModal(targetDiv || 'basic')}
+                            className="text-xs font-medium text-zinc-600 hover:text-zinc-900"
+                          >
+                            + Submit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteOverviewItem(cardItem.id)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
+                            title="Delete this Overview card"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );

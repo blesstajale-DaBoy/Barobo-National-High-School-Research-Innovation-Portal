@@ -14,6 +14,8 @@ import {
   RotateCcw,
   Bell,
   Mail,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 import {
   ResearchRecord,
@@ -27,6 +29,26 @@ import {
   downloadStandalonePortalHtml,
   getDivisionLabel,
 } from '../utils/reportExporter';
+
+/**
+ * Converts a Google Drive sharing link (e.g. https://drive.google.com/file/d/FILE_ID/view)
+ * or open/uc link into a direct embeddable image URL, and preserves any website image link.
+ */
+export function resolveOverviewImageLink(url: string): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (trimmed.startsWith('data:')) return trimmed;
+
+  const fileMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileMatch && fileMatch[1]) {
+    return `https://drive.google.com/thumbnail?id=${fileMatch[1]}&sz=w1000`;
+  }
+  const idParamMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idParamMatch && idParamMatch[1] && trimmed.includes('drive.google.com')) {
+    return `https://drive.google.com/thumbnail?id=${idParamMatch[1]}&sz=w1000`;
+  }
+  return trimmed;
+}
 
 interface AdminEvaluationViewProps {
   researches: ResearchRecord[];
@@ -85,6 +107,7 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
   const [ovSubtitle, setOvSubtitle] = useState<string>('');
   const [ovDescription, setOvDescription] = useState<string>('');
   const [ovImageUrl, setOvImageUrl] = useState<string>('');
+  const [ovWebLinkInput, setOvWebLinkInput] = useState<string>('');
   const [ovDivisionLink, setOvDivisionLink] = useState<'none' | 'basic' | 'action' | 'tuklas'>('none');
   const [ovOrder, setOvOrder] = useState<number>(4);
   const [savingOverview, setSavingOverview] = useState<boolean>(false);
@@ -124,20 +147,6 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
     }
   };
 
-  const openAddOverviewCard = () => {
-    setEditingOverviewId(null);
-    setOvType('card');
-    setOvCode(`HIGHLIGHT-0${overviewItems.filter((i) => i.itemType === 'card').length + 1}`);
-    setOvTitle('');
-    setOvSubtitle('BNHS Institutional Research Highlight');
-    setOvDescription('');
-    setOvImageUrl('/assets/aistudio/BNHS_LOGO_animated.gif');
-    setOvDivisionLink('basic');
-    setOvOrder(overviewItems.length + 1);
-    setIsOverviewFormOpen(true);
-    setOvFeedback('');
-  };
-
   const openEditOverviewItem = (item: OverviewItemRecord) => {
     setEditingOverviewId(item.id);
     setOvType(item.itemType);
@@ -146,6 +155,7 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
     setOvSubtitle(item.subtitle);
     setOvDescription(item.description);
     setOvImageUrl(item.imageUrl);
+    setOvWebLinkInput(item.imageUrl.startsWith('data:') ? '' : item.imageUrl);
     setOvDivisionLink(item.divisionLink);
     setOvOrder(item.displayOrder);
     setIsOverviewFormOpen(true);
@@ -195,6 +205,12 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
     reader.readAsDataURL(file);
   };
 
+  const handleApplyWebOrGoogleLink = (rawLink: string) => {
+    const resolved = resolveOverviewImageLink(rawLink);
+    setOvWebLinkInput(rawLink);
+    setOvImageUrl(resolved);
+  };
+
   const handleOverviewFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ovTitle.trim() || !ovDescription.trim()) return;
@@ -203,6 +219,9 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
     try {
       const id =
         editingOverviewId || `overview_card_${Date.now()}`;
+      const finalImageUrl = resolveOverviewImageLink(
+        ovImageUrl || ovWebLinkInput || '/assets/aistudio/BNHS_LOGO_animated.gif'
+      );
       await onSaveOverviewItem({
         id,
         itemType: ovType,
@@ -210,7 +229,7 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
         title: ovTitle.trim(),
         subtitle: ovSubtitle.trim() || 'BNHS Research Portal',
         description: ovDescription.trim(),
-        imageUrl: ovImageUrl || '/assets/aistudio/BNHS_LOGO_animated.gif',
+        imageUrl: finalImageUrl,
         divisionLink: ovDivisionLink,
         displayOrder: ovOrder,
         isDeleted: false,
@@ -341,17 +360,16 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
             <button
               type="button"
-              onClick={openAddOverviewCard}
+              onClick={async () => {
+                setIsOverviewFormOpen(false);
+                setEditingOverviewId(null);
+                setConfirmDeleteOvId(null);
+                await onResetOverviewDefaults();
+                setOvFeedback(
+                  'Default Overview Hero Banner and Three Major Research Division cards have been restored.'
+                );
+              }}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Overview Section Card &amp; Photo</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onResetOverviewDefaults}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 transition-colors whitespace-nowrap shrink-0"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Restore Default Overview</span>
@@ -366,7 +384,7 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
           </div>
         )}
 
-        {/* Add / Edit Overview Item Form with Photo Upload */}
+        {/* Edit Overview Item Form with Photo Upload */}
         {isOverviewFormOpen && (
           <form
             onSubmit={handleOverviewFormSubmit}
@@ -374,9 +392,7 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
           >
             <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
               <h4 className="text-sm font-display font-semibold text-[#6B1420]">
-                {editingOverviewId
-                  ? `Edit Overview Section Item (${ovType === 'hero' ? 'Hero Banner' : 'Overview Card'})`
-                  : 'Add New Overview Section Card & Upload Photo'}
+                Edit Overview Section Item ({ovType === 'hero' ? 'Hero Banner' : 'Overview Card'})
               </h4>
               <button
                 type="button"
@@ -482,14 +498,15 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
               />
             </div>
 
-            {/* Photo Upload & Preview */}
+            {/* Photo Upload & Preview (Local Computer, Google Drive Link, or Website Link) */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white border border-zinc-200 p-4">
               <div className="md:col-span-4">
-                <div className="aspect-[16/10] w-full bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center">
+                <div className="aspect-[16/10] w-full bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center relative">
                   {ovImageUrl ? (
                     <img
-                      src={ovImageUrl}
+                      src={resolveOverviewImageLink(ovImageUrl)}
                       alt="Overview Preview"
+                      referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -497,36 +514,70 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                   )}
                 </div>
               </div>
-              <div className="md:col-span-8 space-y-2.5">
-                <label className="block text-xs font-semibold text-zinc-800">
-                  Upload Photo for Overview Section (JPG, PNG, WEBP, or Animated GIF)
-                </label>
-                <div className="flex flex-wrap items-center gap-3">
-                  <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Upload Photo from Computer</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleOverviewPhotoUpload}
-                      className="hidden"
-                    />
+              <div className="md:col-span-8 space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-800 mb-1.5">
+                    Option 1: Upload Photo from Local Computer (JPG, PNG, WEBP, or GIF)
                   </label>
-                  <input
-                    type="text"
-                    value={ovImageUrl.startsWith('data:') ? 'Uploaded Custom Photo (Data URL)' : ovImageUrl}
-                    onChange={(e) => {
-                      if (!e.target.value.startsWith('Uploaded Custom Photo')) {
-                        setOvImageUrl(e.target.value);
-                      }
-                    }}
-                    placeholder="Or paste an image URL..."
-                    className="flex-1 min-w-[200px] px-3 py-2 text-xs border border-zinc-300 bg-white"
-                  />
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload Photo from Computer</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleOverviewPhotoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    {ovImageUrl.startsWith('data:') && (
+                      <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1">
+                        Local Photo Loaded
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <p className="text-[11px] text-zinc-500">
-                  Uploaded photos are automatically optimized and immediately displayed on the main Overview dashboard.
-                </p>
+
+                <div className="pt-2 border-t border-zinc-100">
+                  <label className="block text-xs font-semibold text-zinc-800 mb-1.5 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-[#6B1420]" />
+                    <span>
+                      Option 2: Upload Photo via Google Drive Link or Any Website Link
+                    </span>
+                  </label>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <input
+                      type="url"
+                      value={ovWebLinkInput}
+                      onChange={(e) => handleApplyWebOrGoogleLink(e.target.value)}
+                      placeholder="Paste Google Drive photo link (https://drive.google.com/...) or any website image URL (https://...)"
+                      className="flex-1 px-3 py-2 text-xs border border-zinc-300 bg-[#FAF9F5] focus:outline-none focus:border-[#6B1420]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleApplyWebOrGoogleLink(ovWebLinkInput)}
+                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors whitespace-nowrap shrink-0"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Apply Google / Website Link</span>
+                    </button>
+                    {ovWebLinkInput.trim() && (
+                      <a
+                        href={ovWebLinkInput.trim()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-1 px-2.5 py-2 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 whitespace-nowrap shrink-0"
+                        title="Open source link in new tab"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open Link</span>
+                      </a>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-zinc-500 mt-1">
+                    Supports Google Drive sharing links (make sure the file is set to &ldquo;Anyone with the link can view&rdquo;) as well as any direct website image link (JPG, PNG, WEBP, GIF).
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -543,17 +594,13 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                 disabled={savingOverview}
                 className="px-5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] disabled:opacity-50"
               >
-                {savingOverview
-                  ? 'Saving Overview Changes...'
-                  : editingOverviewId
-                  ? 'Save Overview Changes & Photo'
-                  : 'Add to Overview Section'}
+                {savingOverview ? 'Saving Overview Changes...' : 'Save Overview Changes & Photo'}
               </button>
             </div>
           </form>
         )}
 
-        {/* Current Overview Items Grid with Edit, Upload Photo & Delete Controls */}
+        {/* Current Overview Items Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {overviewItems.map((item) => (
             <div
@@ -561,12 +608,19 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
               className="border border-zinc-200 bg-[#FAF9F5] flex flex-col justify-between overflow-hidden"
             >
               <div>
-                <div className="aspect-[16/10] w-full bg-zinc-200 relative overflow-hidden">
-                  <img
-                    src={item.imageUrl}
-                    alt={item.title}
-                    className="w-full h-full object-cover"
-                  />
+                <div className="aspect-[16/10] w-full bg-zinc-200 relative overflow-hidden flex items-center justify-center">
+                  {item.imageUrl ? (
+                    <img
+                      src={resolveOverviewImageLink(item.imageUrl)}
+                      alt={item.title}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="text-center p-4 text-xs text-zinc-500">
+                      No Photo Uploaded
+                    </div>
+                  )}
                   <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#6B1420] text-white text-[10px] font-mono font-semibold">
                     {item.itemType === 'hero' ? 'HERO BANNER' : item.code}
                   </div>
@@ -584,50 +638,46 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                 </div>
               </div>
 
-              <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2">
+              <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => openEditOverviewItem(item)}
                   className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
-                  <span>Edit / Upload Photo</span>
+                  <span>Edit / Photo</span>
                 </button>
 
-                {item.itemType !== 'hero' && (
-                  <>
-                    {confirmDeleteOvId === item.id ? (
-                      <div className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await onDeleteOverviewItem(item.id);
-                            setConfirmDeleteOvId(null);
-                            setOvFeedback(`Removed "${item.title}" from the Overview section.`);
-                          }}
-                          className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteOvId(null)}
-                          className="px-1.5 py-1 text-[11px] text-zinc-600"
-                        >
-                          No
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteOvId(item.id)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete</span>
-                      </button>
-                    )}
-                  </>
+                {confirmDeleteOvId === item.id ? (
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await onDeleteOverviewItem(item.id);
+                        setConfirmDeleteOvId(null);
+                        setOvFeedback(`Deleted "${item.title}" from the Overview section.`);
+                      }}
+                      className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
+                    >
+                      Confirm Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteOvId(null)}
+                      className="px-1.5 py-1 text-[11px] text-zinc-600"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteOvId(item.id)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
                 )}
               </div>
             </div>
