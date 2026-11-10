@@ -1,0 +1,415 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'blesstajale@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // 3. Entity Validation Blueprints (Anti-Update-Gap)
+    function isValidResearch(data) {
+      return data.keys().hasAll([
+          'portalId', 'title', 'division', 'category', 'subcategory',
+          'abstract', 'keywords', 'authors', 'authorRole', 'adviser',
+          'departmentOrGrade', 'schoolYear', 'status', 'methodology',
+          'keyFindings', 'attachmentName', 'attachmentType', 'attachmentSize',
+          'fileDocId', 'driveUrl', 'evaluationScore', 'evaluationRemarks',
+          'evaluatedBy', 'authorUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'title', 'division', 'category', 'subcategory',
+          'abstract', 'keywords', 'authors', 'authorRole', 'adviser',
+          'departmentOrGrade', 'schoolYear', 'status', 'methodology',
+          'keyFindings', 'attachmentName', 'attachmentType', 'attachmentSize',
+          'fileDocId', 'driveUrl', 'evaluationScore', 'evaluationRemarks',
+          'evaluatedBy', 'authorUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.title is string && data.title.size() >= 3 && data.title.size() <= 300 &&
+        data.division is string && data.division.size() <= 20 &&
+        (data.division == 'basic' || data.division == 'action' || data.division == 'tuklas') &&
+        data.category is string && data.category.size() >= 2 && data.category.size() <= 120 &&
+        data.subcategory is string && data.subcategory.size() <= 120 &&
+        data.abstract is string && data.abstract.size() >= 10 && data.abstract.size() <= 4000 &&
+        data.keywords is string && data.keywords.size() <= 300 &&
+        data.authors is string && data.authors.size() >= 2 && data.authors.size() <= 300 &&
+        data.authorRole is string && data.authorRole.size() <= 30 &&
+        (data.authorRole == 'Teacher' || data.authorRole == 'Student' || data.authorRole == 'Collaborative') &&
+        data.adviser is string && data.adviser.size() <= 160 &&
+        data.departmentOrGrade is string && data.departmentOrGrade.size() <= 120 &&
+        data.schoolYear is string && data.schoolYear.size() <= 20 &&
+        data.status is string && data.status.size() <= 30 &&
+        (data.status == 'Pending Review' || data.status == 'Ongoing' || data.status == 'Completed' || data.status == 'Approved' || data.status == 'Revision Requested' || data.status == 'Archived') &&
+        data.methodology is string && data.methodology.size() <= 1500 &&
+        data.keyFindings is string && data.keyFindings.size() <= 2000 &&
+        data.attachmentName is string && data.attachmentName.size() <= 260 &&
+        data.attachmentType is string && data.attachmentType.size() <= 100 &&
+        data.attachmentSize is number && data.attachmentSize >= 0 && data.attachmentSize <= 50000000 &&
+        data.fileDocId is string && data.fileDocId.size() <= 128 &&
+        data.driveUrl is string && data.driveUrl.size() <= 500 &&
+        data.evaluationScore is number && data.evaluationScore >= 0 && data.evaluationScore <= 100 &&
+        data.evaluationRemarks is string && data.evaluationRemarks.size() <= 1500 &&
+        data.evaluatedBy is string && data.evaluatedBy.size() <= 160 &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.authorUid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidResearchFile(data) {
+      return data.keys().hasAll([
+          'portalId', 'fileName', 'mimeType', 'sizeBytes', 'dataUrl', 'uploaderUid', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'fileName', 'mimeType', 'sizeBytes', 'dataUrl', 'uploaderUid', 'createdAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 260 &&
+        data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 120 &&
+        data.sizeBytes is number && data.sizeBytes >= 0 && data.sizeBytes <= 1000000 &&
+        data.dataUrl is string && data.dataUrl.size() >= 1 && data.dataUrl.size() <= 750000 &&
+        data.uploaderUid is string && data.uploaderUid.size() >= 1 && data.uploaderUid.size() <= 128 &&
+        data.uploaderUid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidResearcherProfile(data) {
+      return data.keys().hasAll([
+          'portalId', 'uid', 'fullName', 'role', 'departmentOrStrand',
+          'gradeOrPosition', 'specialization', 'bio', 'institutionIdCode',
+          'driveFolderUrl', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'uid', 'fullName', 'role', 'departmentOrStrand',
+          'gradeOrPosition', 'specialization', 'bio', 'institutionIdCode',
+          'driveFolderUrl', 'createdAt', 'updatedAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+        data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 160 &&
+        data.role is string && data.role.size() <= 40 &&
+        (data.role == 'Student Researcher' || data.role == 'Teacher Researcher' || data.role == 'Master Teacher / Adviser' || data.role == 'Research Coordinator') &&
+        data.departmentOrStrand is string && data.departmentOrStrand.size() >= 2 && data.departmentOrStrand.size() <= 120 &&
+        data.gradeOrPosition is string && data.gradeOrPosition.size() >= 1 && data.gradeOrPosition.size() <= 100 &&
+        data.specialization is string && data.specialization.size() <= 250 &&
+        data.bio is string && data.bio.size() <= 1000 &&
+        data.institutionIdCode is string && data.institutionIdCode.size() <= 60 &&
+        data.driveFolderUrl is string && data.driveFolderUrl.size() <= 500 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidResearchComment(data) {
+      return data.keys().hasAll([
+          'portalId', 'researchId', 'authorUid', 'authorName', 'authorRole', 'content', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'researchId', 'authorUid', 'authorName', 'authorRole', 'content', 'createdAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.researchId is string && data.researchId.size() >= 1 && data.researchId.size() <= 128 &&
+        data.researchId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.authorUid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 160 &&
+        data.authorRole is string && data.authorRole.size() >= 1 && data.authorRole.size() <= 60 &&
+        data.content is string && data.content.size() >= 2 && data.content.size() <= 2000 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidResearchSubscription(data) {
+      return data.keys().hasAll([
+          'portalId', 'researchId', 'researchTitle', 'subscriberUid',
+          'subscriberEmail', 'notifyOnStatusChange', 'notifyOnComments', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'researchId', 'researchTitle', 'subscriberUid',
+          'subscriberEmail', 'notifyOnStatusChange', 'notifyOnComments', 'createdAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.researchId is string && data.researchId.size() >= 1 && data.researchId.size() <= 128 &&
+        data.researchId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.researchTitle is string && data.researchTitle.size() >= 1 && data.researchTitle.size() <= 300 &&
+        data.subscriberUid is string && data.subscriberUid.size() >= 1 && data.subscriberUid.size() <= 128 &&
+        data.subscriberUid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.subscriberEmail is string && data.subscriberEmail.size() >= 3 && data.subscriberEmail.size() <= 200 &&
+        data.notifyOnStatusChange is bool &&
+        data.notifyOnComments is bool &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidOverviewItem(data) {
+      return data.keys().hasAll([
+          'portalId', 'itemType', 'code', 'title', 'subtitle', 'description',
+          'imageUrl', 'divisionLink', 'displayOrder', 'isDeleted', 'updatedByUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'itemType', 'code', 'title', 'subtitle', 'description',
+          'imageUrl', 'divisionLink', 'displayOrder', 'isDeleted', 'updatedByUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.itemType is string && data.itemType.size() <= 20 &&
+        (data.itemType == 'hero' || data.itemType == 'card') &&
+        data.code is string && data.code.size() >= 1 && data.code.size() <= 40 &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 300 &&
+        data.subtitle is string && data.subtitle.size() >= 1 && data.subtitle.size() <= 200 &&
+        data.description is string && data.description.size() >= 5 && data.description.size() <= 2000 &&
+        data.imageUrl is string && data.imageUrl.size() <= 750000 &&
+        data.divisionLink is string && data.divisionLink.size() <= 20 &&
+        (data.divisionLink == 'none' || data.divisionLink == 'basic' || data.divisionLink == 'action' || data.divisionLink == 'tuklas') &&
+        data.displayOrder is number && data.displayOrder >= 0 && data.displayOrder <= 1000 &&
+        data.isDeleted is bool &&
+        data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128 &&
+        data.updatedByUid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'appointedNote', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'appointedNote', 'createdAt']) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+        data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.appointedNote is string && data.appointedNote.size() >= 1 && data.appointedNote.size() <= 200 &&
+        data.createdAt is timestamp;
+    }
+
+    // 4. Collection Rules: /researches/{researchId}
+    match /researches/{researchId} {
+      // Public institutional repository read, strictly scoped by portalId == 'bnhs'
+      allow get: if isValidId(researchId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isVerifiedUser() &&
+        isValidId(researchId) &&
+        isValidResearch(incoming()) &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          (incoming().status == 'Pending Review' && incoming().evaluationScore == 0 && incoming().evaluationRemarks == '' && incoming().evaluatedBy == '') ||
+          isAdmin()
+        );
+
+      allow update: if isVerifiedUser() &&
+        isValidId(researchId) &&
+        isValidResearch(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().authorUid == existing().authorUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (existing().status != 'Archived' || isAdmin()) &&
+        (
+          // Action 1: Author Manuscript Update (can edit their posted/submitted research without altering evaluation fields)
+          (
+            existing().authorUid == request.auth.uid &&
+            incoming().evaluationScore == existing().evaluationScore &&
+            incoming().evaluationRemarks == existing().evaluationRemarks &&
+            incoming().evaluatedBy == existing().evaluatedBy &&
+            (incoming().status == existing().status || incoming().status == 'Pending Review' || incoming().status == 'Ongoing' || incoming().status == 'Completed') &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'division', 'category', 'subcategory', 'abstract',
+              'keywords', 'authors', 'authorRole', 'adviser', 'departmentOrGrade',
+              'schoolYear', 'status', 'methodology', 'keyFindings',
+              'attachmentName', 'attachmentType', 'attachmentSize',
+              'fileDocId', 'driveUrl', 'updatedAt'
+            ])
+          ) ||
+          // Action 2: Administrator / Research Committee Evaluation & Workflow Update
+          isAdmin()
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(researchId) &&
+        (existing().authorUid == request.auth.uid || isAdmin());
+    }
+
+    // 5. Collection Rules: /research_files/{fileId}
+    match /research_files/{fileId} {
+      allow get: if isValidId(fileId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isVerifiedUser() &&
+        isValidId(fileId) &&
+        isValidResearchFile(incoming()) &&
+        incoming().uploaderUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+
+      allow update: if false;
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(fileId) &&
+        (existing().uploaderUid == request.auth.uid || isAdmin());
+    }
+
+    // 6. Collection Rules: /researchers/{researcherId}
+    match /researchers/{researcherId} {
+      allow get: if isValidId(researcherId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isVerifiedUser() &&
+        isValidId(researcherId) &&
+        isValidResearcherProfile(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          (researcherId == request.auth.uid && incoming().uid == request.auth.uid && incoming().role != 'Research Coordinator') ||
+          isAdmin()
+        );
+
+      allow update: if isVerifiedUser() &&
+        isValidId(researcherId) &&
+        isValidResearcherProfile(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            researcherId == request.auth.uid &&
+            existing().uid == request.auth.uid &&
+            incoming().role == existing().role &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'fullName', 'departmentOrStrand', 'gradeOrPosition',
+              'specialization', 'bio', 'institutionIdCode', 'driveFolderUrl', 'updatedAt'
+            ])
+          ) ||
+          isAdmin()
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(researcherId) && isAdmin();
+    }
+
+    // 7. Collection Rules: /research_comments/{commentId}
+    match /research_comments/{commentId} {
+      allow get: if isValidId(commentId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isVerifiedUser() &&
+        isValidId(commentId) &&
+        isValidResearchComment(incoming()) &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+
+      allow update: if false;
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(commentId) &&
+        (existing().authorUid == request.auth.uid || isAdmin());
+    }
+
+    // 8. Collection Rules: /research_subscriptions/{subscriptionId}
+    // Strictly PII-Isolated: Only the subscriber or a verified Admin can read or modify subscriptions
+    match /research_subscriptions/{subscriptionId} {
+      allow get: if isVerifiedUser() &&
+        isValidId(subscriptionId) &&
+        (existing().subscriberUid == request.auth.uid || isAdmin());
+
+      allow list: if isVerifiedUser() &&
+        (existing().subscriberUid == request.auth.uid || isAdmin());
+
+      allow create: if isVerifiedUser() &&
+        isValidId(subscriptionId) &&
+        isValidResearchSubscription(incoming()) &&
+        incoming().subscriberUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(subscriptionId) &&
+        isValidResearchSubscription(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().researchId == existing().researchId &&
+        incoming().subscriberUid == existing().subscriberUid &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          (
+            existing().subscriberUid == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'researchTitle', 'subscriberEmail', 'notifyOnStatusChange', 'notifyOnComments'
+            ])
+          ) ||
+          isAdmin()
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(subscriptionId) &&
+        (existing().subscriberUid == request.auth.uid || isAdmin());
+    }
+
+    // 9. Collection Rules: /overview_items/{itemId}
+    match /overview_items/{itemId} {
+      allow get: if isValidId(itemId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isAdmin() &&
+        isValidId(itemId) &&
+        isValidOverviewItem(incoming()) &&
+        incoming().updatedByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(itemId) &&
+        isValidOverviewItem(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedByUid == request.auth.uid &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'itemType', 'code', 'title', 'subtitle', 'description',
+          'imageUrl', 'divisionLink', 'displayOrder', 'isDeleted',
+          'updatedByUid', 'updatedAt'
+        ]);
+
+      allow delete: if isAdmin() && isValidId(itemId);
+    }
+
+    // 10. Collection Rules: /admins/{adminUid}
+    match /admins/{adminUid} {
+      allow get: if isVerifiedUser() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
+      allow list: if isAdmin() && existing().uid == request.auth.uid;
+
+      allow create: if isAdmin() &&
+        isValidId(adminUid) &&
+        isValidAdminRecord(incoming()) &&
+        incoming().uid == adminUid &&
+        incoming().createdAt == request.time;
+
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(adminUid);
+    }
+  }
+}

@@ -1,0 +1,926 @@
+import React, { useState } from 'react';
+import {
+  CheckCircle2,
+  Database,
+  FileSpreadsheet,
+  FileCode,
+  ShieldCheck,
+  Search,
+  Plus,
+  Edit3,
+  Trash2,
+  Upload,
+  Image as ImageIcon,
+  RotateCcw,
+  Bell,
+  Mail,
+} from 'lucide-react';
+import {
+  ResearchRecord,
+  ResearchStatus,
+  OverviewItemRecord,
+  ResearchSubscriptionRecord,
+  EmailAlertLogRecord,
+} from '../data/bnhsTaxonomy';
+import {
+  downloadResearchInventoryCsv,
+  downloadStandalonePortalHtml,
+  getDivisionLabel,
+} from '../utils/reportExporter';
+
+interface AdminEvaluationViewProps {
+  researches: ResearchRecord[];
+  isAdmin: boolean;
+  currentUserUid?: string | null;
+  currentUserEmail?: string | null;
+  onSelectResearch: (record: ResearchRecord) => void;
+  onEditResearch: (record: ResearchRecord) => void;
+  onDeleteResearch: (record: ResearchRecord) => Promise<void>;
+  onAddNewResearch: () => void;
+  onQuickStatusUpdate: (record: ResearchRecord, newStatus: ResearchStatus) => Promise<void>;
+  onSyncBaselineToCloud: () => Promise<void>;
+  onSignInPrompt: () => void;
+  overviewItems: OverviewItemRecord[];
+  onSaveOverviewItem: (
+    item: Omit<OverviewItemRecord, 'portalId' | 'updatedByUid' | 'createdAtIso' | 'updatedAtIso'>
+  ) => Promise<void>;
+  onDeleteOverviewItem: (itemId: string) => Promise<void>;
+  onResetOverviewDefaults: () => Promise<void>;
+  subscriptions: ResearchSubscriptionRecord[];
+  emailAlertLogs: EmailAlertLogRecord[];
+}
+
+export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
+  researches,
+  isAdmin,
+  currentUserUid,
+  currentUserEmail,
+  onSelectResearch,
+  onEditResearch,
+  onDeleteResearch,
+  onAddNewResearch,
+  onQuickStatusUpdate,
+  onSyncBaselineToCloud,
+  onSignInPrompt,
+  overviewItems,
+  onSaveOverviewItem,
+  onDeleteOverviewItem,
+  onResetOverviewDefaults,
+  subscriptions,
+  emailAlertLogs,
+}) => {
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [syncing, setSyncing] = useState<boolean>(false);
+  const [syncMessage, setSyncMessage] = useState<string>('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirmDeleteResearchId, setConfirmDeleteResearchId] = useState<string | null>(null);
+
+  // Overview Section Manager State (Add / Edit / Delete / Upload Photo)
+  const [isOverviewFormOpen, setIsOverviewFormOpen] = useState<boolean>(false);
+  const [editingOverviewId, setEditingOverviewId] = useState<string | null>(null);
+  const [ovType, setOvType] = useState<'hero' | 'card'>('card');
+  const [ovCode, setOvCode] = useState<string>('DIV-04');
+  const [ovTitle, setOvTitle] = useState<string>('');
+  const [ovSubtitle, setOvSubtitle] = useState<string>('');
+  const [ovDescription, setOvDescription] = useState<string>('');
+  const [ovImageUrl, setOvImageUrl] = useState<string>('');
+  const [ovDivisionLink, setOvDivisionLink] = useState<'none' | 'basic' | 'action' | 'tuklas'>('none');
+  const [ovOrder, setOvOrder] = useState<number>(4);
+  const [savingOverview, setSavingOverview] = useState<boolean>(false);
+  const [ovFeedback, setOvFeedback] = useState<string>('');
+  const [confirmDeleteOvId, setConfirmDeleteOvId] = useState<string | null>(null);
+
+  const pendingCount = researches.filter((r) => r.status === 'Pending Review').length;
+  const approvedCount = researches.filter((r) => r.status === 'Approved').length;
+  const completedCount = researches.filter((r) => r.status === 'Completed').length;
+  const ongoingCount = researches.filter((r) => r.status === 'Ongoing').length;
+
+  const filtered = researches.filter((r) => {
+    if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      if (
+        !`${r.title} ${r.authors} ${r.category} ${r.departmentOrGrade}`
+          .toLowerCase()
+          .includes(q)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMessage('');
+    try {
+      await onSyncBaselineToCloud();
+      setSyncMessage(
+        'All Barobo National High School baseline studies and researcher profiles are now synced to Firestore.'
+      );
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const openAddOverviewCard = () => {
+    setEditingOverviewId(null);
+    setOvType('card');
+    setOvCode(`HIGHLIGHT-0${overviewItems.filter((i) => i.itemType === 'card').length + 1}`);
+    setOvTitle('');
+    setOvSubtitle('BNHS Institutional Research Highlight');
+    setOvDescription('');
+    setOvImageUrl('/assets/aistudio/BNHS_LOGO_animated.gif');
+    setOvDivisionLink('basic');
+    setOvOrder(overviewItems.length + 1);
+    setIsOverviewFormOpen(true);
+    setOvFeedback('');
+  };
+
+  const openEditOverviewItem = (item: OverviewItemRecord) => {
+    setEditingOverviewId(item.id);
+    setOvType(item.itemType);
+    setOvCode(item.code);
+    setOvTitle(item.title);
+    setOvSubtitle(item.subtitle);
+    setOvDescription(item.description);
+    setOvImageUrl(item.imageUrl);
+    setOvDivisionLink(item.divisionLink);
+    setOvOrder(item.displayOrder);
+    setIsOverviewFormOpen(true);
+    setOvFeedback('');
+  };
+
+  // Compress & convert uploaded image to DataURL (< 450KB) so it stores cleanly in Firestore & localStorage
+  const handleOverviewPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const rawDataUrl = String(event.target?.result || '');
+      if (file.type === 'image/gif' && rawDataUrl.length < 650000) {
+        setOvImageUrl(rawDataUrl);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 960;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.82);
+          setOvImageUrl(compressed);
+        } else {
+          setOvImageUrl(rawDataUrl);
+        }
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleOverviewFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ovTitle.trim() || !ovDescription.trim()) return;
+    setSavingOverview(true);
+    setOvFeedback('');
+    try {
+      const id =
+        editingOverviewId || `overview_card_${Date.now()}`;
+      await onSaveOverviewItem({
+        id,
+        itemType: ovType,
+        code: ovCode.trim() || 'BNHS-OV',
+        title: ovTitle.trim(),
+        subtitle: ovSubtitle.trim() || 'BNHS Research Portal',
+        description: ovDescription.trim(),
+        imageUrl: ovImageUrl || '/assets/aistudio/BNHS_LOGO_animated.gif',
+        divisionLink: ovDivisionLink,
+        displayOrder: ovOrder,
+        isDeleted: false,
+      });
+      setIsOverviewFormOpen(false);
+      setEditingOverviewId(null);
+      setOvFeedback(
+        editingOverviewId
+          ? 'Overview section item & photo updated on the Overview dashboard.'
+          : 'New Overview section item & photo added to the Overview dashboard.'
+      );
+    } finally {
+      setSavingOverview(false);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      {/* Admin & Evaluation Header */}
+      <div className="bg-white border border-zinc-200 p-6 md:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div className="max-w-2xl">
+          <div className="text-xs text-zinc-500 flex items-center gap-2 mb-1">
+            <ShieldCheck className="w-4 h-4 text-[#6B1420]" />
+            <span>
+              BNHS School Research Committee · Evaluation, Overview Customization &amp; Report Exports
+            </span>
+          </div>
+          <h2 className="text-2xl font-display font-semibold text-zinc-900">
+            Administrator Dashboard, Overview Manager &amp; Evaluation Workflow
+          </h2>
+          <p className="text-sm text-zinc-600 mt-1.5">
+            Customize the Overview section (Add, Edit, Delete, and Upload Photos), manage all submitted and posted research entries, assign 100-point rubric evaluations, and monitor email alert subscriptions.
+          </p>
+          <div className="mt-3 text-xs text-zinc-600">
+            {currentUserEmail ? (
+              <span>
+                Signed in as <strong className="font-mono">{currentUserEmail}</strong> ·{' '}
+                <strong className="text-[#6B1420]">
+                  {isAdmin
+                    ? 'Administrator & Coordinator Privileges Active'
+                    : 'Researcher Account (Full Edit & Delete on Submitted Research)'}
+                </strong>
+              </span>
+            ) : (
+              <span>
+                Not signed in ·{' '}
+                <button
+                  type="button"
+                  onClick={onSignInPrompt}
+                  className="text-[#6B1420] font-semibold underline"
+                >
+                  Sign in with Google
+                </button>{' '}
+                to sync Administrator Evaluation &amp; Cloud Repository changes across devices.
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Institutional Export & Cloud Sync Actions */}
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={onAddNewResearch}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add / Submit Research</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => downloadResearchInventoryCsv(researches)}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-zinc-800 bg-zinc-100 hover:bg-zinc-200 transition-colors whitespace-nowrap shrink-0"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-[#6B1420]" />
+            <span>Export Inventory (.CSV)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => downloadStandalonePortalHtml(researches)}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-zinc-800 bg-zinc-100 hover:bg-zinc-200 transition-colors whitespace-nowrap shrink-0"
+          >
+            <FileCode className="w-3.5 h-3.5 text-amber-700" />
+            <span>Download BNHS Portal (.HTML)</span>
+          </button>
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={syncing}
+              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>
+                {syncing ? 'Syncing to Firestore...' : 'Sync Baseline to Cloud DB'}
+              </span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {syncMessage && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+          <span>{syncMessage}</span>
+        </div>
+      )}
+
+      {/* ==================== ADMIN OVERVIEW SECTION MANAGER (ADD, EDIT, DELETE & UPLOAD PHOTO) ==================== */}
+      <div className="bg-white border border-zinc-200 p-6 md:p-8 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
+          <div>
+            <div className="text-xs text-[#6B1420] font-semibold flex items-center gap-1.5">
+              <ImageIcon className="w-4 h-4" />
+              <span>Overview Section Customization &amp; Photo Upload Manager</span>
+            </div>
+            <h3 className="text-xl font-display font-semibold text-zinc-900 mt-0.5">
+              Manage Overview Section (Add, Edit, Delete &amp; Upload Photo)
+            </h3>
+            <p className="text-xs text-zinc-600 mt-1">
+              Customize the Overview Hero Banner and Division/Highlight Cards displayed on the Overview page. Upload new photos, edit titles and descriptions, add new highlight cards, or delete items you want to change.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={openAddOverviewCard}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Overview Section Card &amp; Photo</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onResetOverviewDefaults}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 transition-colors whitespace-nowrap shrink-0"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Restore Default Overview</span>
+            </button>
+          </div>
+        </div>
+
+        {ovFeedback && (
+          <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span>{ovFeedback}</span>
+          </div>
+        )}
+
+        {/* Add / Edit Overview Item Form with Photo Upload */}
+        {isOverviewFormOpen && (
+          <form
+            onSubmit={handleOverviewFormSubmit}
+            className="p-5 bg-[#FAF9F5] border border-[#6B1420]/30 space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+              <h4 className="text-sm font-display font-semibold text-[#6B1420]">
+                {editingOverviewId
+                  ? `Edit Overview Section Item (${ovType === 'hero' ? 'Hero Banner' : 'Overview Card'})`
+                  : 'Add New Overview Section Card & Upload Photo'}
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsOverviewFormOpen(false)}
+                className="text-xs text-zinc-500 hover:text-zinc-900"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">
+                  Overview Section Type
+                </label>
+                <select
+                  value={ovType}
+                  onChange={(e) => setOvType(e.target.value as 'hero' | 'card')}
+                  disabled={editingOverviewId === 'overview_hero_main'}
+                  className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                >
+                  <option value="card">Overview Division / Highlight Card</option>
+                  <option value="hero">Main Overview Hero Banner</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">
+                  {ovType === 'hero' ? 'Top Institutional Kicker' : 'Card Code / Badge'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={ovCode}
+                  onChange={(e) => setOvCode(e.target.value)}
+                  placeholder="e.g., DIV-01 or HIGHLIGHT-01"
+                  className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">
+                  Target Division Link
+                </label>
+                <select
+                  value={ovDivisionLink}
+                  onChange={(e) =>
+                    setOvDivisionLink(
+                      e.target.value as 'none' | 'basic' | 'action' | 'tuklas'
+                    )
+                  }
+                  className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                >
+                  <option value="basic">Basic Research</option>
+                  <option value="action">Action Research</option>
+                  <option value="tuklas">TUKLAS Project Fair</option>
+                  <option value="none">General Overview (No Division Jump)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">
+                  Title <span className="text-red-600">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={ovTitle}
+                  onChange={(e) => setOvTitle(e.target.value)}
+                  placeholder="Enter Overview section title..."
+                  className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">
+                  {ovType === 'hero' ? 'Photo Overlay Caption' : 'Subtitle / Theme Focus'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={ovSubtitle}
+                  onChange={(e) => setOvSubtitle(e.target.value)}
+                  placeholder="Enter subtitle or caption..."
+                  className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-700 mb-1">
+                Description / Summary Content <span className="text-red-600">*</span>
+              </label>
+              <textarea
+                rows={3}
+                required
+                value={ovDescription}
+                onChange={(e) => setOvDescription(e.target.value)}
+                placeholder="Enter detailed overview description..."
+                className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+              />
+            </div>
+
+            {/* Photo Upload & Preview */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white border border-zinc-200 p-4">
+              <div className="md:col-span-4">
+                <div className="aspect-[16/10] w-full bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center">
+                  {ovImageUrl ? (
+                    <img
+                      src={ovImageUrl}
+                      alt="Overview Preview"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-xs text-zinc-400">No photo selected</span>
+                  )}
+                </div>
+              </div>
+              <div className="md:col-span-8 space-y-2.5">
+                <label className="block text-xs font-semibold text-zinc-800">
+                  Upload Photo for Overview Section (JPG, PNG, WEBP, or Animated GIF)
+                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload Photo from Computer</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleOverviewPhotoUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  <input
+                    type="text"
+                    value={ovImageUrl.startsWith('data:') ? 'Uploaded Custom Photo (Data URL)' : ovImageUrl}
+                    onChange={(e) => {
+                      if (!e.target.value.startsWith('Uploaded Custom Photo')) {
+                        setOvImageUrl(e.target.value);
+                      }
+                    }}
+                    placeholder="Or paste an image URL..."
+                    className="flex-1 min-w-[200px] px-3 py-2 text-xs border border-zinc-300 bg-white"
+                  />
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  Uploaded photos are automatically optimized and immediately displayed on the main Overview dashboard.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsOverviewFormOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingOverview}
+                className="px-5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] disabled:opacity-50"
+              >
+                {savingOverview
+                  ? 'Saving Overview Changes...'
+                  : editingOverviewId
+                  ? 'Save Overview Changes & Photo'
+                  : 'Add to Overview Section'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Current Overview Items Grid with Edit, Upload Photo & Delete Controls */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {overviewItems.map((item) => (
+            <div
+              key={item.id}
+              className="border border-zinc-200 bg-[#FAF9F5] flex flex-col justify-between overflow-hidden"
+            >
+              <div>
+                <div className="aspect-[16/10] w-full bg-zinc-200 relative overflow-hidden">
+                  <img
+                    src={item.imageUrl}
+                    alt={item.title}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#6B1420] text-white text-[10px] font-mono font-semibold">
+                    {item.itemType === 'hero' ? 'HERO BANNER' : item.code}
+                  </div>
+                </div>
+                <div className="p-4 space-y-1.5">
+                  <div className="text-[11px] text-[#6B1420] font-semibold line-clamp-1">
+                    {item.subtitle}
+                  </div>
+                  <h4 className="text-sm font-display font-semibold text-zinc-900 line-clamp-2">
+                    {item.title}
+                  </h4>
+                  <p className="text-xs text-zinc-600 line-clamp-2">
+                    {item.description}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => openEditOverviewItem(item)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit / Upload Photo</span>
+                </button>
+
+                {item.itemType !== 'hero' && (
+                  <>
+                    {confirmDeleteOvId === item.id ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await onDeleteOverviewItem(item.id);
+                            setConfirmDeleteOvId(null);
+                            setOvFeedback(`Removed "${item.title}" from the Overview section.`);
+                          }}
+                          className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteOvId(null)}
+                          className="px-1.5 py-1 text-[11px] text-zinc-600"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteOvId(item.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Workflow KPI Strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white border border-zinc-200 p-5">
+          <div className="text-xs text-zinc-500">Pending Committee Review</div>
+          <div className="text-2xl font-mono font-bold text-amber-700 mt-1 tabular-nums">
+            {pendingCount}
+          </div>
+          <div className="text-[11px] text-zinc-500 mt-1">
+            Awaiting rubric grading &amp; sign-off
+          </div>
+        </div>
+        <div className="bg-white border border-zinc-200 p-5">
+          <div className="text-xs text-zinc-500">Approved &amp; Published</div>
+          <div className="text-2xl font-mono font-bold text-[#6B1420] mt-1 tabular-nums">
+            {approvedCount}
+          </div>
+          <div className="text-[11px] text-zinc-500 mt-1">
+            Verified in public research library
+          </div>
+        </div>
+        <div className="bg-white border border-zinc-200 p-5">
+          <div className="text-xs text-zinc-500">Completed Studies</div>
+          <div className="text-2xl font-mono font-bold text-zinc-900 mt-1 tabular-nums">
+            {completedCount}
+          </div>
+          <div className="text-[11px] text-zinc-500 mt-1">
+            Final manuscript archived
+          </div>
+        </div>
+        <div className="bg-white border border-zinc-200 p-5">
+          <div className="text-xs text-zinc-500">Active Email Alert Subscriptions</div>
+          <div className="text-2xl font-mono font-bold text-[#6B1420] mt-1 tabular-nums">
+            {subscriptions.length}
+          </div>
+          <div className="text-[11px] text-zinc-500 mt-1">
+            {emailAlertLogs.length} email alerts dispatched
+          </div>
+        </div>
+      </div>
+
+      {/* Filter & Search Toolbar */}
+      <div className="bg-white border border-zinc-200 p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(
+            [
+              { id: 'all', label: `All Posted & Submitted Records (${researches.length})` },
+              { id: 'Pending Review', label: `Pending Review (${pendingCount})` },
+              { id: 'Approved', label: `Approved (${approvedCount})` },
+              { id: 'Completed', label: `Completed (${completedCount})` },
+              { id: 'Ongoing', label: `Ongoing (${ongoingCount})` },
+              { id: 'Revision Requested', label: 'Revision Requested' },
+            ] as const
+          ).map((st) => (
+            <button
+              key={st.id}
+              type="button"
+              onClick={() => setStatusFilter(st.id)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                statusFilter === st.id
+                  ? 'bg-[#6B1420] text-white'
+                  : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+              }`}
+            >
+              {st.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="relative min-w-[250px]">
+          <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter research records to edit, evaluate, or delete..."
+            className="w-full pl-9 pr-3 py-1.5 text-xs border border-zinc-300 bg-white focus:outline-none focus:border-[#6B1420]"
+          />
+        </div>
+      </div>
+
+      {/* High-Density Review & Management Table (Edit, Delete, Evaluate, Approve) */}
+      <div className="bg-white border border-zinc-200 overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-zinc-200 bg-[#FAF9F5] text-[11px] font-semibold text-zinc-600">
+              <th className="py-3 px-4">Research Title &amp; Proponents</th>
+              <th className="py-3 px-4">Division &amp; Theme/Category</th>
+              <th className="py-3 px-4">SY</th>
+              <th className="py-3 px-4">Status</th>
+              <th className="py-3 px-4 text-right">Rubric Score</th>
+              <th className="py-3 px-4 text-right">Edit, Delete &amp; Workflow Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-200 text-xs">
+            {filtered.map((item) => {
+              const canModify =
+                isAdmin ||
+                !currentUserUid ||
+                item.authorUid === currentUserUid;
+              return (
+                <tr
+                  key={item.id}
+                  className="hover:bg-zinc-50/80 transition-colors"
+                >
+                  <td className="py-3.5 px-4 max-w-md">
+                    <button
+                      type="button"
+                      onClick={() => onSelectResearch(item)}
+                      className="text-left font-semibold text-zinc-900 hover:text-[#6B1420] hover:underline line-clamp-2"
+                    >
+                      {item.title}
+                    </button>
+                    <div className="text-zinc-500 mt-0.5">
+                      {item.authors} · {item.authorRole} · {item.departmentOrGrade}
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-4 text-zinc-700">
+                    <div className="font-medium text-zinc-900">
+                      {getDivisionLabel(item.division)}
+                    </div>
+                    <div className="text-zinc-500 line-clamp-1">{item.category}</div>
+                  </td>
+                  <td className="py-3.5 px-4 font-mono text-zinc-600 whitespace-nowrap">
+                    {item.schoolYear}
+                  </td>
+                  <td className="py-3.5 px-4 whitespace-nowrap">
+                    <span
+                      className={`font-semibold ${
+                        item.status === 'Approved'
+                          ? 'text-emerald-800'
+                          : item.status === 'Pending Review'
+                          ? 'text-amber-700'
+                          : item.status === 'Revision Requested'
+                          ? 'text-red-700'
+                          : 'text-zinc-700'
+                      }`}
+                    >
+                      {item.status}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-mono tabular-nums text-zinc-800 whitespace-nowrap">
+                    {item.evaluationScore > 0 ? `${item.evaluationScore}/100` : 'Unrated'}
+                  </td>
+                  <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                    <div className="inline-flex items-center justify-end gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => onSelectResearch(item)}
+                        className="px-2.5 py-1 text-xs font-medium text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
+                      >
+                        {isAdmin ? 'Evaluate' : 'Details'}
+                      </button>
+
+                      {canModify && (
+                        <button
+                          type="button"
+                          onClick={() => onEditResearch(item)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-zinc-800 bg-zinc-100 hover:bg-zinc-200 transition-colors"
+                        >
+                          <Edit3 className="w-3 h-3 text-[#6B1420]" />
+                          <span>Edit</span>
+                        </button>
+                      )}
+
+                      {canModify && (
+                        <>
+                          {confirmDeleteResearchId === item.id ? (
+                            <div className="inline-flex items-center gap-1 bg-red-50 border border-red-200 px-2 py-0.5">
+                              <button
+                                type="button"
+                                disabled={busyId === item.id}
+                                onClick={async () => {
+                                  setBusyId(item.id);
+                                  try {
+                                    await onDeleteResearch(item);
+                                    setConfirmDeleteResearchId(null);
+                                  } finally {
+                                    setBusyId(null);
+                                  }
+                                }}
+                                className="px-2 py-0.5 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
+                              >
+                                Confirm Delete
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteResearchId(null)}
+                                className="px-1.5 py-0.5 text-[11px] text-zinc-600 hover:text-zinc-900"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteResearchId(item.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Delete</span>
+                            </button>
+                          )}
+                        </>
+                      )}
+
+                      {isAdmin && item.status !== 'Approved' && (
+                        <button
+                          type="button"
+                          disabled={busyId === item.id}
+                          onClick={async () => {
+                            setBusyId(item.id);
+                            try {
+                              await onQuickStatusUpdate(item, 'Approved');
+                            } finally {
+                              setBusyId(null);
+                            }
+                          }}
+                          className="px-2.5 py-1 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] disabled:opacity-50 transition-colors"
+                        >
+                          Approve
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Email Alert Dispatch Log & Subscriptions Monitor */}
+      <div className="bg-white border border-zinc-200 p-6 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2 border-b border-zinc-200 pb-3">
+          <div>
+            <div className="text-xs font-semibold text-[#6B1420] flex items-center gap-1.5">
+              <Bell className="w-4 h-4" />
+              <span>Real-Time Email Alert Dispatch Log</span>
+            </div>
+            <h3 className="text-base font-display font-semibold text-zinc-900 mt-0.5">
+              Recent Status Change &amp; Comment Email Notifications ({emailAlertLogs.length})
+            </h3>
+          </div>
+        </div>
+
+        {emailAlertLogs.length === 0 ? (
+          <p className="text-xs text-zinc-500">
+            No email alerts dispatched in this session yet. Click &ldquo;Notify Me&rdquo; on any research entry, then change its status or add a comment to trigger an email alert.
+          </p>
+        ) : (
+          <div className="space-y-2.5 max-h-64 overflow-y-auto">
+            {emailAlertLogs.map((log) => (
+              <div
+                key={log.id}
+                className="p-3.5 bg-[#FAF9F5] border border-zinc-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-[#6B1420]">
+                      To: {log.recipientEmail}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-medium text-zinc-900">{log.subject}</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-mono text-zinc-500 text-[11px]">
+                      {log.dispatchedAtIso.slice(0, 19).replace('T', ' ')}
+                    </span>
+                  </div>
+                  <p className="text-zinc-600">{log.messageBody}</p>
+                </div>
+                <a
+                  href={`mailto:${encodeURIComponent(
+                    log.recipientEmail
+                  )}?subject=${encodeURIComponent(
+                    log.subject
+                  )}&body=${encodeURIComponent(log.messageBody)}`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] whitespace-nowrap shrink-0 self-start sm:self-center"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>Open in Email Client</span>
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #FAF9F5;
+    color: #18181B;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono, .tabular-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes bnhs-marquee-loop {
+  0% {
+    transform: translate3d(0%, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes bnhs-text-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes bnhs-logo-pulse {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.05) rotate(2deg);
+  }
+  50% {
+    transform: scale(1.08) rotate(0deg);
+  }
+  75% {
+    transform: scale(1.05) rotate(-2deg);
+  }
+}
+
+.bnhs-logo-animate {
+  will-change: transform;
+  animation: bnhs-logo-pulse 3.6s ease-in-out infinite;
+}
+
+.bnhs-marquee-viewport {
+  overflow: hidden;
+  width: 100%;
+  position: relative;
+}
+
+.bnhs-marquee-belt {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: bnhs-marquee-loop 18s linear infinite;
+}
+
+.bnhs-marquee-viewport:hover .bnhs-marquee-belt {
+  animation-play-state: paused;
+}
+
+.bnhs-animated-copyright-text {
+  background: linear-gradient(
+    90deg,
+    #ffffff 0%,
+    #fde68a 25%,
+    #fecdd3 50%,
+    #fbbf24 75%,
+    #ffffff 100%
+  );
+  background-size: 250% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: bnhs-text-shimmer 4.5s linear infinite;
+}
