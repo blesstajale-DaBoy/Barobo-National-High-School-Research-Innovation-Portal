@@ -88,6 +88,10 @@ import { AdminEvaluationView } from './components/AdminEvaluationView';
 import { LatestAdditionsWidget } from './components/LatestAdditionsWidget';
 import { NotifyMeModal } from './components/NotifyMeModal';
 import { OverviewAnalyticsSection } from './components/OverviewAnalyticsSection';
+import {
+  BnhsPortalLoginModal,
+  BnhsPortalUserSession,
+} from './components/BnhsPortalLoginModal';
 
 type ActiveSection =
   | 'overview'
@@ -104,9 +108,19 @@ const LOCAL_DELETED_RESEARCH_IDS_KEY = 'bnhs_deleted_research_ids_v1';
 const LOCAL_COMMENTS_KEY = 'bnhs_local_comments_v1';
 const LOCAL_PROFILES_KEY = 'bnhs_local_profiles_v1';
 const LOCAL_DELETED_PROFILE_IDS_KEY = 'bnhs_deleted_profile_ids_v1';
+const LOCAL_PORTAL_SESSION_KEY = 'bnhs_portal_user_session_v1';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [portalSession, setPortalSession] = useState<BnhsPortalUserSession | null>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_PORTAL_SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [isCustomAdminDoc, setIsCustomAdminDoc] = useState<boolean>(false);
 
@@ -315,10 +329,23 @@ export default function App() {
     }, 5500);
   };
 
+  // Persist BNHS Portal Login Session across reloads & live published links
+  useEffect(() => {
+    try {
+      if (portalSession) {
+        localStorage.setItem(LOCAL_PORTAL_SESSION_KEY, JSON.stringify(portalSession));
+      } else {
+        localStorage.removeItem(LOCAL_PORTAL_SESSION_KEY);
+      }
+    } catch {
+      // ignore
+    }
+  }, [portalSession]);
+
   // 1. Auth Listener
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
+      setFirebaseUser(user);
       setAuthReady(true);
       if (user) {
         try {
@@ -334,12 +361,54 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  const isAdmin = useMemo(() => {
-    if (!currentUser || !currentUser.emailVerified) return false;
+  const currentUser = useMemo(() => {
+    if (firebaseUser) {
+      return {
+        uid: firebaseUser.uid,
+        displayName:
+          portalSession?.displayName ||
+          firebaseUser.displayName ||
+          firebaseUser.email?.split('@')[0] ||
+          'Barobo NHS User',
+        email: firebaseUser.email || portalSession?.email || '',
+        emailVerified: firebaseUser.emailVerified,
+        accountClassification:
+          portalSession?.accountClassification ||
+          (firebaseUser.email === BOOTSTRAPPED_ADMIN_EMAIL
+            ? 'Administrator / Research Coordinator'
+            : 'Teacher / Student Account'),
+      };
+    }
+    if (portalSession) {
+      return {
+        uid: portalSession.uid,
+        displayName: portalSession.displayName,
+        email: portalSession.email,
+        emailVerified: true,
+        accountClassification: portalSession.accountClassification,
+      };
+    }
+    return null;
+  }, [firebaseUser, portalSession]);
+
+  const isCloudAdmin = useMemo(() => {
+    if (!firebaseUser || !firebaseUser.emailVerified) return false;
     return (
-      currentUser.email === BOOTSTRAPPED_ADMIN_EMAIL || isCustomAdminDoc
+      firebaseUser.email === BOOTSTRAPPED_ADMIN_EMAIL || isCustomAdminDoc
     );
-  }, [currentUser, isCustomAdminDoc]);
+  }, [firebaseUser, isCustomAdminDoc]);
+
+  const isAdmin = useMemo(() => {
+    if (isCloudAdmin) return true;
+    if (portalSession?.isAdmin) return true;
+    if (
+      currentUser?.email &&
+      currentUser.email.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL.toLowerCase()
+    ) {
+      return true;
+    }
+    return false;
+  }, [isCloudAdmin, portalSession, currentUser]);
 
   // 2. Real-time Firestore Listeners for /researches, /researchers, /research_comments, /overview_items (scoped by portalId == 'bnhs')
   useEffect(() => {
@@ -516,14 +585,14 @@ export default function App() {
 
   // 3. Authenticated Listener for PII-isolated /research_subscriptions
   useEffect(() => {
-    if (!authReady || !currentUser || !currentUser.emailVerified) {
+    if (!authReady || !firebaseUser || !firebaseUser.emailVerified) {
       setCloudSubscriptions([]);
       return;
     }
     const subsPath = 'research_subscriptions';
     const qSubs = query(
       collection(db, subsPath),
-      where('subscriberUid', '==', currentUser.uid)
+      where('subscriberUid', '==', firebaseUser.uid)
     );
 
     const unsub = onSnapshot(
@@ -553,11 +622,11 @@ export default function App() {
     );
 
     return () => unsub();
-  }, [authReady, currentUser]);
+  }, [authReady, firebaseUser]);
 
-  // 4. Automatic Cloud Sync whenever authenticated user signs in or local changes occur
+  // 4. Automatic Cloud Sync whenever authenticated Firebase user signs in or local changes occur
   useEffect(() => {
-    if (!authReady || !currentUser || !currentUser.emailVerified || loadingData) {
+    if (!authReady || !firebaseUser || !firebaseUser.emailVerified || loadingData) {
       return;
     }
     const timer = window.setTimeout(async () => {
@@ -580,7 +649,7 @@ export default function App() {
               adviser: item.adviser,
               departmentOrGrade: item.departmentOrGrade,
               schoolYear: item.schoolYear,
-              status: isAdmin ? item.status : 'Pending Review',
+              status: isCloudAdmin ? item.status : 'Pending Review',
               methodology: item.methodology,
               keyFindings: item.keyFindings,
               attachmentName: item.attachmentName,
@@ -588,16 +657,16 @@ export default function App() {
               attachmentSize: item.attachmentSize,
               fileDocId: item.fileDocId || '',
               driveUrl: item.driveUrl || '',
-              evaluationScore: isAdmin ? item.evaluationScore : 0,
-              evaluationRemarks: isAdmin ? item.evaluationRemarks : '',
-              evaluatedBy: isAdmin ? item.evaluatedBy : '',
-              authorUid: currentUser.uid,
+              evaluationScore: isCloudAdmin ? item.evaluationScore : 0,
+              evaluationRemarks: isCloudAdmin ? item.evaluationRemarks : '',
+              evaluatedBy: isCloudAdmin ? item.evaluatedBy : '',
+              authorUid: firebaseUser.uid,
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             });
           }
         }
-        if (isAdmin) {
+        if (isCloudAdmin) {
           for (const ov of localOverviewItems) {
             const cleanId = sanitizeId(ov.id);
             const exists = cloudOverviewItems.some((c) => c.id === cleanId);
@@ -613,7 +682,7 @@ export default function App() {
                 divisionLink: ov.divisionLink,
                 displayOrder: ov.displayOrder,
                 isDeleted: ov.isDeleted,
-                updatedByUid: currentUser.uid,
+                updatedByUid: firebaseUser.uid,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
               });
@@ -628,8 +697,8 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [
     authReady,
-    currentUser,
-    isAdmin,
+    firebaseUser,
+    isCloudAdmin,
     loadingData,
     localResearches,
     localOverviewItems,
@@ -805,7 +874,7 @@ export default function App() {
       newSub,
     ]);
 
-    if (currentUser && currentUser.emailVerified) {
+    if (auth.currentUser && auth.currentUser.emailVerified) {
       const docPath = `research_subscriptions/${subId}`;
       const existsInCloud = cloudSubscriptions.some((s) => s.id === subId);
       try {
@@ -821,7 +890,7 @@ export default function App() {
             portalId: 'bnhs',
             researchId: record.id,
             researchTitle: newSub.researchTitle,
-            subscriberUid: currentUser.uid,
+            subscriberUid: auth.currentUser.uid,
             subscriberEmail: newSub.subscriberEmail,
             notifyOnStatusChange,
             notifyOnComments,
@@ -846,8 +915,8 @@ export default function App() {
     setLocalSubscriptions((prev) =>
       prev.filter((s) => s.researchId !== record.id)
     );
-    if (currentUser && currentUser.emailVerified) {
-      const subId = sanitizeId(`sub_${currentUser.uid}_${record.id}`);
+    if (auth.currentUser && auth.currentUser.emailVerified) {
+      const subId = sanitizeId(`sub_${auth.currentUser.uid}_${record.id}`);
       const existsInCloud = cloudSubscriptions.some((s) => s.id === subId);
       if (existsInCloud) {
         const docPath = `research_subscriptions/${subId}`;
@@ -883,13 +952,13 @@ export default function App() {
 
     setLocalComments((prev) => [...prev, newComment]);
 
-    if (currentUser && currentUser.emailVerified) {
+    if (auth.currentUser && auth.currentUser.emailVerified) {
       const docPath = `research_comments/${commentId}`;
       try {
         await setDoc(doc(db, 'research_comments', commentId), {
           portalId: 'bnhs',
           researchId: record.id,
-          authorUid: currentUser.uid,
+          authorUid: auth.currentUser.uid,
           authorName: newComment.authorName,
           authorRole: newComment.authorRole,
           content: newComment.content,
@@ -910,7 +979,7 @@ export default function App() {
 
   const handleDeleteComment = async (commentId: string) => {
     setLocalComments((prev) => prev.filter((c) => c.id !== commentId));
-    if (currentUser && currentUser.emailVerified) {
+    if (auth.currentUser && auth.currentUser.emailVerified) {
       const existsInCloud = cloudComments.some((c) => c.id === commentId);
       if (existsInCloud) {
         const docPath = `research_comments/${commentId}`;
@@ -947,7 +1016,7 @@ export default function App() {
       record,
     ]);
 
-    if (currentUser && isAdmin) {
+    if (auth.currentUser && isCloudAdmin) {
       const docPath = `overview_items/${cleanId}`;
       const existsInCloud = cloudOverviewItems.some((i) => i.id === cleanId);
       try {
@@ -962,7 +1031,7 @@ export default function App() {
             divisionLink: record.divisionLink,
             displayOrder: record.displayOrder,
             isDeleted: record.isDeleted,
-            updatedByUid: currentUser.uid,
+            updatedByUid: auth.currentUser.uid,
             updatedAt: serverTimestamp(),
           });
         } else {
@@ -977,7 +1046,7 @@ export default function App() {
             divisionLink: record.divisionLink,
             displayOrder: record.displayOrder,
             isDeleted: record.isDeleted,
-            updatedByUid: currentUser.uid,
+            updatedByUid: auth.currentUser.uid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -1002,7 +1071,7 @@ export default function App() {
   const handleResetOverviewDefaults = async () => {
     setLocalOverviewItems([]);
     localStorage.removeItem(LOCAL_OVERVIEW_ITEMS_KEY);
-    if (currentUser && isAdmin) {
+    if (auth.currentUser && isCloudAdmin) {
       for (const cloudItem of cloudOverviewItems) {
         try {
           await deleteDoc(doc(db, 'overview_items', cloudItem.id));
@@ -1130,7 +1199,7 @@ export default function App() {
 
       if (editingRecord && isExistingCloudDoc) {
         const canUpdateCloud =
-          isAdmin || editingRecord.authorUid === auth.currentUser.uid;
+          isCloudAdmin || editingRecord.authorUid === auth.currentUser.uid;
         if (canUpdateCloud) {
           const docPath = `researches/${editingRecord.id}`;
           try {
@@ -1176,7 +1245,7 @@ export default function App() {
             adviser: payload.adviser,
             departmentOrGrade: payload.departmentOrGrade,
             schoolYear: payload.schoolYear,
-            status: isAdmin ? payload.status : 'Pending Review',
+            status: isCloudAdmin ? payload.status : 'Pending Review',
             methodology: payload.methodology,
             keyFindings: payload.keyFindings,
             attachmentName: payload.attachmentName,
@@ -1184,9 +1253,9 @@ export default function App() {
             attachmentSize: payload.attachmentSize,
             fileDocId,
             driveUrl: payload.driveUrl,
-            evaluationScore: isAdmin ? payload.evaluationScore : 0,
-            evaluationRemarks: isAdmin ? payload.evaluationRemarks : '',
-            evaluatedBy: isAdmin ? payload.evaluatedBy : '',
+            evaluationScore: isCloudAdmin ? payload.evaluationScore : 0,
+            evaluationRemarks: isCloudAdmin ? payload.evaluationRemarks : '',
+            evaluatedBy: isCloudAdmin ? payload.evaluatedBy : '',
             authorUid: auth.currentUser.uid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
@@ -1235,7 +1304,7 @@ export default function App() {
       updatedRecord,
     ]);
 
-    if (auth.currentUser && isAdmin) {
+    if (auth.currentUser && isCloudAdmin) {
       const existsInCloud = cloudResearches.some((c) => c.id === record.id);
       const docPath = `researches/${record.id}`;
 
@@ -1307,7 +1376,7 @@ export default function App() {
     if (
       existsInCloud &&
       auth.currentUser &&
-      (isAdmin || record.authorUid === auth.currentUser.uid)
+      (isCloudAdmin || record.authorUid === auth.currentUser.uid)
     ) {
       const docPath = `researches/${record.id}`;
       try {
@@ -1349,10 +1418,11 @@ export default function App() {
   ) => {
     const rawId =
       targetProfileId ||
+      currentUser?.uid ||
       auth.currentUser?.uid ||
       `profile_${Date.now()}`;
     const cleanId = sanitizeId(rawId);
-    const uid = sanitizeId(auth.currentUser?.uid || cleanId);
+    const uid = sanitizeId(currentUser?.uid || auth.currentUser?.uid || cleanId);
 
     const newProfile: ResearcherProfileRecord = {
       id: cleanId,
@@ -1378,7 +1448,8 @@ export default function App() {
     setDeletedProfileIds((prev) => prev.filter((id) => id !== cleanId));
 
     if (auth.currentUser && auth.currentUser.emailVerified) {
-      const canWriteCloud = isAdmin || cleanId === sanitizeId(auth.currentUser.uid);
+      const canWriteCloud =
+        isCloudAdmin || cleanId === sanitizeId(auth.currentUser.uid);
       if (canWriteCloud) {
         const docPath = `researchers/${cleanId}`;
         const existsInCloud = cloudProfiles.some((p) => p.id === cleanId);
@@ -1400,10 +1471,10 @@ export default function App() {
           } else {
             await setDoc(doc(db, 'researchers', cleanId), {
               portalId: 'bnhs',
-              uid: isAdmin ? uid : auth.currentUser.uid,
+              uid: isCloudAdmin ? uid : auth.currentUser.uid,
               fullName: payload.fullName,
               role:
-                !isAdmin && payload.role === 'Research Coordinator'
+                !isCloudAdmin && payload.role === 'Research Coordinator'
                   ? 'Teacher Researcher'
                   : payload.role,
               departmentOrStrand: payload.departmentOrStrand,
@@ -1433,7 +1504,7 @@ export default function App() {
     );
     setLocalProfiles((prev) => prev.filter((p) => p.id !== profileId));
 
-    if (auth.currentUser && isAdmin) {
+    if (auth.currentUser && isCloudAdmin) {
       const existsInCloud = cloudProfiles.some((p) => p.id === profileId);
       if (existsInCloud) {
         const docPath = `researchers/${profileId}`;
@@ -1472,7 +1543,7 @@ export default function App() {
               adviser: item.adviser,
               departmentOrGrade: item.departmentOrGrade,
               schoolYear: item.schoolYear,
-              status: isAdmin ? item.status : 'Pending Review',
+              status: isCloudAdmin ? item.status : 'Pending Review',
               methodology: item.methodology,
               keyFindings: item.keyFindings,
               attachmentName: item.attachmentName,
@@ -1480,9 +1551,9 @@ export default function App() {
               attachmentSize: item.attachmentSize,
               fileDocId: item.fileDocId || '',
               driveUrl: item.driveUrl || '',
-              evaluationScore: isAdmin ? item.evaluationScore : 0,
-              evaluationRemarks: isAdmin ? item.evaluationRemarks : '',
-              evaluatedBy: isAdmin ? item.evaluatedBy : '',
+              evaluationScore: isCloudAdmin ? item.evaluationScore : 0,
+              evaluationRemarks: isCloudAdmin ? item.evaluationRemarks : '',
+              evaluatedBy: isCloudAdmin ? item.evaluatedBy : '',
               authorUid: auth.currentUser.uid,
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
@@ -1494,7 +1565,7 @@ export default function App() {
       }
 
       // 2. If Admin, also sync baseline records and overview customizations
-      if (isAdmin) {
+      if (isCloudAdmin) {
         for (const item of INITIAL_BNHS_RESEARCHES) {
           if (deletedResearchIds.includes(item.id)) continue;
           const exists = cloudResearches.some((c) => c.id === item.id);
@@ -1908,17 +1979,30 @@ export default function App() {
 
             <span aria-hidden="true" className="text-rose-300/60">|</span>
 
-            {authReady && currentUser ? (
+            {currentUser ? (
               <div className="flex items-center justify-center gap-3 flex-wrap">
                 <span className="text-rose-100">
                   <strong className="text-white">
                     {currentUser.displayName || 'Barobo NHS'}
                   </strong>{' '}
-                  ({isAdmin ? 'Administrator / Coordinator' : 'Teacher / Student Account'})
+                  ({currentUser.accountClassification || (isAdmin ? 'Administrator / Coordinator' : 'Teacher / Student Account')})
                 </span>
                 <button
                   type="button"
-                  onClick={() => signOutUser()}
+                  onClick={() => setIsLoginModalOpen(true)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-rose-200 hover:text-white whitespace-nowrap shrink-0"
+                >
+                  <span>Switch Account</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setPortalSession(null);
+                    if (auth.currentUser) {
+                      await signOutUser();
+                    }
+                    showToast('Signed out of Barobo NHS Portal.');
+                  }}
                   className="inline-flex items-center gap-1 text-xs font-medium text-amber-300 hover:text-white whitespace-nowrap shrink-0"
                 >
                   <LogOut className="w-3.5 h-3.5" />
@@ -1928,13 +2012,7 @@ export default function App() {
             ) : (
               <button
                 type="button"
-                onClick={async () => {
-                  try {
-                    await signInWithGooglePopup();
-                  } catch {
-                    showToast('Sign-in popup was closed before completing authentication.');
-                  }
-                }}
+                onClick={() => setIsLoginModalOpen(true)}
                 className="inline-flex items-center gap-1.5 text-xs font-semibold text-white hover:text-amber-300 whitespace-nowrap shrink-0"
               >
                 <LogIn className="w-3.5 h-3.5 text-amber-300" />
@@ -3265,13 +3343,7 @@ export default function App() {
                 onSelectResearch={(rec) => setSelectedDetailRecord(rec)}
                 onSaveProfile={handleSaveResearcherProfile}
                 onDeleteProfile={handleDeleteResearcherProfile}
-                onSignInPrompt={async () => {
-                  try {
-                    await signInWithGooglePopup();
-                  } catch {
-                    showToast('Please sign in with Google to register your Researcher Profile.');
-                  }
-                }}
+                onSignInPrompt={() => setIsLoginModalOpen(true)}
               />
             ) : (
               <AdminEvaluationView
@@ -3298,13 +3370,7 @@ export default function App() {
                   );
                 }}
                 onSyncBaselineToCloud={handleSyncBaselineToCloud}
-                onSignInPrompt={async () => {
-                  try {
-                    await signInWithGooglePopup();
-                  } catch {
-                    showToast('Sign-in popup closed.');
-                  }
-                }}
+                onSignInPrompt={() => setIsLoginModalOpen(true)}
                 overviewItems={activeOverviewItems}
                 onSaveOverviewItem={handleSaveOverviewItem}
                 onDeleteOverviewItem={handleDeleteOverviewItem}
@@ -3462,6 +3528,22 @@ export default function App() {
         onClose={() => setNotifyTargetRecord(null)}
         onSaveSubscription={handleSaveSubscription}
         onUnsubscribe={handleUnsubscribe}
+      />
+
+      {/* BAROBO NHS (TEACHER / STUDENT / ADMIN LOGIN) PERSISTENT MODAL */}
+      <BnhsPortalLoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSignInPortalSession={(session) => {
+          setPortalSession(session);
+          showToast(
+            `Signed in as ${session.displayName} (${session.accountClassification}).`
+          );
+        }}
+        onSignInWithGoogle={async () => {
+          await signInWithGooglePopup();
+          showToast('Signed in with Google Account.');
+        }}
       />
     </div>
   );
