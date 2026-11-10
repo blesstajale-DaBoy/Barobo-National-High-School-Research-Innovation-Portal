@@ -1183,3 +1183,196 @@ export const INITIAL_OVERVIEW_ITEMS: OverviewItemRecord[] = [
   },
 ];
 
+export interface ResearchStatusHistoryRecord {
+  id: string;
+  portalId: 'bnhs';
+  researchId: string;
+  previousStatus: string;
+  newStatus: ResearchStatus;
+  evaluatorName: string;
+  evaluatorUid: string;
+  evaluationScore: number;
+  remarks: string;
+  createdAtIso: string;
+}
+
+export interface ResearchGalleryItemRecord {
+  id: string;
+  portalId: 'bnhs';
+  title: string;
+  caption: string;
+  imageUrl: string;
+  displayOrder: number;
+  createdAtIso: string;
+  updatedAtIso: string;
+  isBaseline?: boolean;
+}
+
+export interface ResearchInformationItemRecord {
+  id: string;
+  portalId: 'bnhs';
+  title: string;
+  category: string;
+  description: string;
+  imageUrl?: string;
+  linkUrl?: string;
+  displayOrder: number;
+  createdAtIso: string;
+  updatedAtIso: string;
+  isBaseline?: boolean;
+}
+
+export const INITIAL_STATUS_HISTORY: ResearchStatusHistoryRecord[] = [
+  {
+    id: 'hist_baseline_001',
+    portalId: 'bnhs',
+    researchId: 'bnhs_basic_001',
+    previousStatus: 'Initial Submission',
+    newStatus: 'Pending Review',
+    evaluatorName: 'Dr. Elena M. Urbiztondo (Research Coordinator)',
+    evaluatorUid: 'baseline_coordinator_01',
+    evaluationScore: 0,
+    remarks: 'Manuscript submitted for institutional curriculum alignment review and ethics clearance.',
+    createdAtIso: '2026-01-20T08:30:00.000Z',
+  },
+  {
+    id: 'hist_baseline_002',
+    portalId: 'bnhs',
+    researchId: 'bnhs_basic_001',
+    previousStatus: 'Pending Review',
+    newStatus: 'Approved',
+    evaluatorName: 'Dr. Elena M. Urbiztondo (Research Coordinator)',
+    evaluatorUid: 'baseline_coordinator_01',
+    evaluationScore: 94,
+    remarks: 'Approved for institutional publication and endorsed for the SY 2026–2027 SHS STEM Bridging Program.',
+    createdAtIso: '2026-02-14T10:15:00.000Z',
+  },
+  {
+    id: 'hist_baseline_003',
+    portalId: 'bnhs',
+    researchId: 'bnhs_tuklas_rim_01',
+    previousStatus: 'Initial Submission',
+    newStatus: 'Ongoing',
+    evaluatorName: 'Engr. Dennis L. Millan (RIM Adviser)',
+    evaluatorUid: 'baseline_teacher_03',
+    evaluationScore: 82,
+    remarks: 'Hardware breadboard test passed. Field testing in Barobo Bay mariculture zone authorized.',
+    createdAtIso: '2026-08-12T09:00:00.000Z',
+  },
+  {
+    id: 'hist_baseline_004',
+    portalId: 'bnhs',
+    researchId: 'bnhs_tuklas_rim_01',
+    previousStatus: 'Ongoing',
+    newStatus: 'Approved',
+    evaluatorName: 'Dr. Elena M. Urbiztondo (Research Coordinator)',
+    evaluatorUid: 'baseline_coordinator_01',
+    evaluationScore: 97,
+    remarks: 'Telemetry transmission across 2.1 km verified. Endorsed for Division Science and Technology Fair (DSTF).',
+    createdAtIso: '2026-10-15T14:30:00.000Z',
+  },
+];
+
+export const INITIAL_RESEARCH_GALLERY: ResearchGalleryItemRecord[] = [
+  {
+    id: 'gallery_item_01',
+    portalId: 'bnhs',
+    title: 'BNHS STEM & Robotics Innovation Expo',
+    caption: 'Junior and Senior High School researchers demonstrating automated hydro-filtration and telemetry robotics prototypes at Barobo National High School.',
+    imageUrl: '/src/assets/images/bnhs_gallery_stem_fair_1794325399735.jpg',
+    displayOrder: 1,
+    createdAtIso: '2026-02-01T08:00:00.000Z',
+    updatedAtIso: '2026-02-01T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'gallery_item_02',
+    portalId: 'bnhs',
+    title: 'Barobo Bay Marine & Mangrove Ecological Fieldwork',
+    caption: 'Environmental science investigators and faculty research mentors collecting water salinity and coastal mangrove biodiversity samples in Surigao del Sur.',
+    imageUrl: '/src/assets/images/bnhs_gallery_marine_fieldwork_1794325420611.jpg',
+    displayOrder: 2,
+    createdAtIso: '2026-02-02T08:00:00.000Z',
+    updatedAtIso: '2026-02-02T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'gallery_item_03',
+    portalId: 'bnhs',
+    title: 'Center for Scientific Research & Faculty Innovation Session',
+    caption: 'BNHS Master Teachers and research coordinators analyzing school-wide numeracy interventions and practitioner action research data.',
+    imageUrl: '/src/assets/images/bnhs_info_research_agenda_1794325398231.jpg',
+    displayOrder: 3,
+    createdAtIso: '2026-02-03T08:00:00.000Z',
+    updatedAtIso: '2026-02-03T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'gallery_item_04',
+    portalId: 'bnhs',
+    title: 'TUKLAS Research Project Fair & Scientific Prototype Exhibition',
+    caption: 'STEM students presenting empirical models and engineering inventions for peer evaluation and Division science congress qualifying.',
+    imageUrl: PORTAL_IMAGES.tuklasFair,
+    displayOrder: 4,
+    createdAtIso: '2026-02-04T08:00:00.000Z',
+    updatedAtIso: '2026-02-04T08:00:00.000Z',
+    isBaseline: true,
+  },
+];
+
+export const INITIAL_RESEARCH_INFORMATION: ResearchInformationItemRecord[] = [
+  {
+    id: 'info_item_01',
+    portalId: 'bnhs',
+    title: 'BNHS Institutional Research Agenda & DepEd BERA Priorities',
+    category: 'Basic Education Research Agenda (BERA)',
+    description: 'Guided by DepEd Order No. 16, s. 2017, Barobo National High School promotes evidence-based pedagogical development, teacher practitioner inquiry, and student STEM innovation. Research outcomes are integrated into the School Improvement Plan (SIP) and curriculum intervention programs.',
+    imageUrl: '/src/assets/images/bnhs_info_research_agenda_1794325398231.jpg',
+    linkUrl: 'https://www.deped.gov.ph',
+    displayOrder: 1,
+    createdAtIso: '2026-02-01T08:00:00.000Z',
+    updatedAtIso: '2026-02-01T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'info_item_02',
+    portalId: 'bnhs',
+    title: 'TUKLAS Science Fair: Scientific Review Committee (SRC) Clearance',
+    category: 'STEM Research Protocols',
+    description: 'All learner investigations in Life Science, Physical Science, Robotics & Intelligent Machines, and the Innovation Expo must secure Scientific Review Committee (SRC) pre-approval and safety clearance before data collection or hardware prototyping begins.',
+    imageUrl: '/src/assets/images/bnhs_gallery_stem_fair_1794325399735.jpg',
+    linkUrl: '',
+    displayOrder: 2,
+    createdAtIso: '2026-02-02T08:00:00.000Z',
+    updatedAtIso: '2026-02-02T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'info_item_03',
+    portalId: 'bnhs',
+    title: 'Technical Review: Grammarian & Statistician Evaluation Workflow',
+    category: 'Quality Assurance & Clearance',
+    description: 'School-based manuscripts undergo formal structural reviews by the designated School Research Grammarian for APA 7th edition language rigor, followed by data validation from the School Research Statistician prior to coordinator certification.',
+    imageUrl: '/src/assets/images/bnhs_gallery_marine_fieldwork_1794325420611.jpg',
+    linkUrl: '',
+    displayOrder: 3,
+    createdAtIso: '2026-02-03T08:00:00.000Z',
+    updatedAtIso: '2026-02-03T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'info_item_04',
+    portalId: 'bnhs',
+    title: 'Seven DepEd Action Research Themes Implementation Matrix',
+    category: 'Practitioner Action Research',
+    description: 'Teachers and Master Teachers address classroom challenges across 7 DepEd BERA themes: Teaching and Learning, Child Protection, Human Resource Development, Governance, Disaster Risk Reduction, Gender and Development, and Inclusive Education.',
+    imageUrl: PORTAL_IMAGES.actionResearch,
+    linkUrl: '',
+    displayOrder: 4,
+    createdAtIso: '2026-02-04T08:00:00.000Z',
+    updatedAtIso: '2026-02-04T08:00:00.000Z',
+    isBaseline: true,
+  },
+];
+
+

@@ -222,6 +222,63 @@ service cloud.firestore {
         data.createdAt is timestamp;
     }
 
+    function isValidStatusHistory(data) {
+      return data.keys().hasAll([
+          'portalId', 'researchId', 'previousStatus', 'newStatus',
+          'evaluatorName', 'evaluatorUid', 'evaluationScore', 'remarks', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'researchId', 'previousStatus', 'newStatus',
+          'evaluatorName', 'evaluatorUid', 'evaluationScore', 'remarks', 'createdAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.researchId is string && data.researchId.size() >= 1 && data.researchId.size() <= 128 &&
+        data.researchId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.previousStatus is string && data.previousStatus.size() <= 50 &&
+        data.newStatus is string && data.newStatus.size() <= 30 &&
+        (data.newStatus == 'Pending Review' || data.newStatus == 'Ongoing' || data.newStatus == 'Completed' || data.newStatus == 'Approved' || data.newStatus == 'Revision Requested' || data.newStatus == 'Archived') &&
+        data.evaluatorName is string && data.evaluatorName.size() >= 1 && data.evaluatorName.size() <= 160 &&
+        data.evaluatorUid is string && data.evaluatorUid.size() >= 1 && data.evaluatorUid.size() <= 128 &&
+        data.evaluatorUid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.evaluationScore is number && data.evaluationScore >= 0 && data.evaluationScore <= 100 &&
+        data.remarks is string && data.remarks.size() <= 1500 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidGalleryItem(data) {
+      return data.keys().hasAll([
+          'portalId', 'title', 'caption', 'imageUrl', 'displayOrder', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'title', 'caption', 'imageUrl', 'displayOrder', 'createdAt', 'updatedAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+        data.caption is string && data.caption.size() <= 1000 &&
+        data.imageUrl is string && data.imageUrl.size() <= 750000 &&
+        data.displayOrder is number && data.displayOrder >= 0 && data.displayOrder <= 1000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidInformationItem(data) {
+      return data.keys().hasAll([
+          'portalId', 'title', 'category', 'description', 'imageUrl', 'linkUrl', 'displayOrder', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'title', 'category', 'description', 'imageUrl', 'linkUrl', 'displayOrder', 'createdAt', 'updatedAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+        data.category is string && data.category.size() <= 120 &&
+        data.description is string && data.description.size() <= 2000 &&
+        data.imageUrl is string && data.imageUrl.size() <= 750000 &&
+        data.linkUrl is string && data.linkUrl.size() <= 500 &&
+        data.displayOrder is number && data.displayOrder >= 0 && data.displayOrder <= 1000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // 4. Collection Rules: /researches/{researchId}
     match /researches/{researchId} {
       allow get: if isValidId(researchId) && existing().portalId == 'bnhs';
@@ -343,6 +400,61 @@ service cloud.firestore {
 
       allow update: if false;
       allow delete: if isAdmin() && isValidId(adminUid);
+    }
+
+    // 11. Collection Rules: /status_history/{historyId}
+    match /status_history/{historyId} {
+      allow get: if isValidId(historyId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isPortalClient(incoming().evaluatorUid) &&
+        isValidId(historyId) &&
+        isValidStatusHistory(incoming()) &&
+        incoming().createdAt == request.time;
+
+      allow update: if false;
+
+      allow delete: if isAdmin() && isValidId(historyId);
+    }
+
+    // 12. Collection Rules: /research_gallery/{galleryId}
+    match /research_gallery/{galleryId} {
+      allow get: if isValidId(galleryId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isAdmin() &&
+        isValidId(galleryId) &&
+        isValidGalleryItem(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(galleryId) &&
+        isValidGalleryItem(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isAdmin() && isValidId(galleryId);
+    }
+
+    // 13. Collection Rules: /research_information/{infoId}
+    match /research_information/{infoId} {
+      allow get: if isValidId(infoId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isAdmin() &&
+        isValidId(infoId) &&
+        isValidInformationItem(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(infoId) &&
+        isValidInformationItem(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isAdmin() && isValidId(infoId);
     }
   }
 }

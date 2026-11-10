@@ -64,6 +64,8 @@ import {
   ResearchSubscriptionRecord,
   EmailAlertLogRecord,
   OverviewItemRecord,
+  ResearchGalleryItemRecord,
+  ResearchInformationItemRecord,
   BASIC_RESEARCH_CATEGORIES,
   ACTION_RESEARCH_THEMES,
   TUKLAS_CATEGORIES,
@@ -71,6 +73,8 @@ import {
   INITIAL_BNHS_RESEARCHERS,
   INITIAL_BNHS_COMMENTS,
   INITIAL_OVERVIEW_ITEMS,
+  INITIAL_RESEARCH_GALLERY,
+  INITIAL_RESEARCH_INFORMATION,
   PORTAL_IMAGES,
   getCategoriesForDivision,
 } from './data/bnhsTaxonomy';
@@ -89,6 +93,8 @@ import {
   AdminEvaluationView,
   resolveOverviewImageLink,
 } from './components/AdminEvaluationView';
+import { ResearchGallerySection } from './components/ResearchGallerySection';
+import { ResearchInformationSection } from './components/ResearchInformationSection';
 import { LatestAdditionsWidget } from './components/LatestAdditionsWidget';
 import { NotifyMeModal } from './components/NotifyMeModal';
 import { OverviewAnalyticsSection } from './components/OverviewAnalyticsSection';
@@ -107,6 +113,8 @@ type ActiveSection =
 const LOCAL_SUBSCRIPTIONS_KEY = 'bnhs_notify_subscriptions_v1';
 const LOCAL_EMAIL_ALERTS_KEY = 'bnhs_email_alerts_log_v1';
 const LOCAL_OVERVIEW_ITEMS_KEY = 'bnhs_overview_items_v1';
+const LOCAL_RESEARCH_GALLERY_KEY = 'bnhs_research_gallery_v1';
+const LOCAL_RESEARCH_INFO_KEY = 'bnhs_research_info_v1';
 const LOCAL_RESEARCH_OVERRIDES_KEY = 'bnhs_local_researches_v1';
 const LOCAL_DELETED_RESEARCH_IDS_KEY = 'bnhs_deleted_research_ids_v1';
 const LOCAL_COMMENTS_KEY = 'bnhs_local_comments_v1';
@@ -133,6 +141,8 @@ export default function App() {
   const [cloudComments, setCloudComments] = useState<ResearchCommentRecord[]>([]);
   const [cloudSubscriptions, setCloudSubscriptions] = useState<ResearchSubscriptionRecord[]>([]);
   const [cloudOverviewItems, setCloudOverviewItems] = useState<OverviewItemRecord[]>([]);
+  const [cloudGalleryItems, setCloudGalleryItems] = useState<ResearchGalleryItemRecord[]>([]);
+  const [cloudInformationItems, setCloudInformationItems] = useState<ResearchInformationItemRecord[]>([]);
   const [loadingData, setLoadingData] = useState<boolean>(false);
   const [initialCloudLoaded, setInitialCloudLoaded] = useState<boolean>(false);
   const hasMountedRef = useRef<boolean>(false);
@@ -186,6 +196,22 @@ export default function App() {
       return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
+    }
+  });
+  const [localGalleryItems, setLocalGalleryItems] = useState<ResearchGalleryItemRecord[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_RESEARCH_GALLERY_KEY);
+      return raw ? JSON.parse(raw) : INITIAL_RESEARCH_GALLERY;
+    } catch {
+      return INITIAL_RESEARCH_GALLERY;
+    }
+  });
+  const [localInformationItems, setLocalInformationItems] = useState<ResearchInformationItemRecord[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_RESEARCH_INFO_KEY);
+      return raw ? JSON.parse(raw) : INITIAL_RESEARCH_INFORMATION;
+    } catch {
+      return INITIAL_RESEARCH_INFORMATION;
     }
   });
   const [localProfiles, setLocalProfiles] = useState<ResearcherProfileRecord[]>(() => {
@@ -606,11 +632,81 @@ export default function App() {
       }
     );
 
+    const galleryPath = 'research_gallery';
+    const qGallery = query(
+      collection(db, galleryPath),
+      where('portalId', '==', 'bnhs')
+    );
+
+    const unsubGallery = onSnapshot(
+      qGallery,
+      (snapshot) => {
+        const list: ResearchGalleryItemRecord[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          return {
+            id: docSnap.id,
+            portalId: 'bnhs',
+            title: String(d.title || ''),
+            caption: String(d.caption || ''),
+            imageUrl: String(d.imageUrl || ''),
+            displayOrder: Number(d.displayOrder || 0),
+            createdAtIso: d.createdAt?.toDate
+              ? d.createdAt.toDate().toISOString()
+              : new Date().toISOString(),
+            updatedAtIso: d.updatedAt?.toDate
+              ? d.updatedAt.toDate().toISOString()
+              : new Date().toISOString(),
+          };
+        });
+        setCloudGalleryItems(list);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, galleryPath);
+      }
+    );
+
+    const infoPath = 'research_information';
+    const qInfo = query(
+      collection(db, infoPath),
+      where('portalId', '==', 'bnhs')
+    );
+
+    const unsubInfo = onSnapshot(
+      qInfo,
+      (snapshot) => {
+        const list: ResearchInformationItemRecord[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          return {
+            id: docSnap.id,
+            portalId: 'bnhs',
+            title: String(d.title || ''),
+            category: String(d.category || ''),
+            description: String(d.description || ''),
+            imageUrl: String(d.imageUrl || ''),
+            linkUrl: String(d.linkUrl || ''),
+            displayOrder: Number(d.displayOrder || 0),
+            createdAtIso: d.createdAt?.toDate
+              ? d.createdAt.toDate().toISOString()
+              : new Date().toISOString(),
+            updatedAtIso: d.updatedAt?.toDate
+              ? d.updatedAt.toDate().toISOString()
+              : new Date().toISOString(),
+          };
+        });
+        setCloudInformationItems(list);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, infoPath);
+      }
+    );
+
     return () => {
       unsubResearches();
       unsubResearchers();
       unsubComments();
       unsubOverview();
+      unsubGallery();
+      unsubInfo();
     };
   }, []);
 
@@ -858,6 +954,32 @@ export default function App() {
   const cardOverviewItems = useMemo(() => {
     return activeOverviewItems.filter((i) => i.itemType === 'card');
   }, [activeOverviewItems]);
+
+  const activeGalleryItems = useMemo(() => {
+    const map = new Map<string, ResearchGalleryItemRecord>();
+    INITIAL_RESEARCH_GALLERY.forEach((g) => map.set(g.id, g));
+    cloudGalleryItems.forEach((g) => map.set(g.id, g));
+    localGalleryItems.forEach((g) => {
+      const existing = map.get(g.id);
+      if (!existing || g.updatedAtIso >= existing.updatedAtIso) {
+        map.set(g.id, g);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.displayOrder - b.displayOrder);
+  }, [cloudGalleryItems, localGalleryItems]);
+
+  const activeInformationItems = useMemo(() => {
+    const map = new Map<string, ResearchInformationItemRecord>();
+    INITIAL_RESEARCH_INFORMATION.forEach((inf) => map.set(inf.id, inf));
+    cloudInformationItems.forEach((inf) => map.set(inf.id, inf));
+    localInformationItems.forEach((inf) => {
+      const existing = map.get(inf.id);
+      if (!existing || inf.updatedAtIso >= existing.updatedAtIso) {
+        map.set(inf.id, inf);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.displayOrder - b.displayOrder);
+  }, [cloudInformationItems, localInformationItems]);
 
   // Keep detail modal synced if record updates
   useEffect(() => {
@@ -1203,6 +1325,136 @@ export default function App() {
     showToast('Default Overview restored and saved to Cloud Database.');
   };
 
+  // Research Gallery Handlers (1000 x 500 Sliding Pictures)
+  const handleSaveGalleryItem = async (
+    payload: Omit<ResearchGalleryItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>
+  ) => {
+    const cleanId = sanitizeId(payload.id);
+    const nowIso = new Date().toISOString();
+    const record: ResearchGalleryItemRecord = {
+      ...payload,
+      id: cleanId,
+      portalId: 'bnhs',
+      imageUrl: resolveOverviewImageLink(payload.imageUrl),
+      createdAtIso: nowIso,
+      updatedAtIso: nowIso,
+    };
+
+    setLocalGalleryItems((prev) => [
+      ...prev.filter((g) => g.id !== cleanId),
+      record,
+    ]);
+
+    const docPath = `research_gallery/${cleanId}`;
+    const exists = cloudGalleryItems.some((g) => g.id === cleanId);
+    try {
+      if (exists) {
+        await updateDoc(doc(db, 'research_gallery', cleanId), {
+          title: record.title.slice(0, 300),
+          caption: record.caption.slice(0, 1000),
+          imageUrl: record.imageUrl.slice(0, 750000),
+          displayOrder: record.displayOrder,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(doc(db, 'research_gallery', cleanId), {
+          portalId: 'bnhs',
+          title: record.title.slice(0, 300),
+          caption: record.caption.slice(0, 1000),
+          imageUrl: record.imageUrl.slice(0, 750000),
+          displayOrder: record.displayOrder,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, docPath);
+    }
+    showToast('Research Gallery picture (1000 × 500) saved to Cloud Database.');
+  };
+
+  const handleDeleteGalleryItem = async (itemId: string) => {
+    const cleanId = sanitizeId(itemId);
+    setLocalGalleryItems((prev) => prev.filter((g) => g.id !== cleanId));
+    const exists = cloudGalleryItems.some((g) => g.id === cleanId);
+    if (exists) {
+      const docPath = `research_gallery/${cleanId}`;
+      try {
+        await deleteDoc(doc(db, 'research_gallery', cleanId));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, docPath);
+      }
+    }
+    showToast('Picture removed from Research Gallery.');
+  };
+
+  // Research Information Handlers (1000 x 500 Topics)
+  const handleSaveInformationItem = async (
+    payload: Omit<ResearchInformationItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>
+  ) => {
+    const cleanId = sanitizeId(payload.id);
+    const nowIso = new Date().toISOString();
+    const record: ResearchInformationItemRecord = {
+      ...payload,
+      id: cleanId,
+      portalId: 'bnhs',
+      imageUrl: resolveOverviewImageLink(payload.imageUrl || ''),
+      createdAtIso: nowIso,
+      updatedAtIso: nowIso,
+    };
+
+    setLocalInformationItems((prev) => [
+      ...prev.filter((i) => i.id !== cleanId),
+      record,
+    ]);
+
+    const docPath = `research_information/${cleanId}`;
+    const exists = cloudInformationItems.some((i) => i.id === cleanId);
+    try {
+      if (exists) {
+        await updateDoc(doc(db, 'research_information', cleanId), {
+          title: record.title.slice(0, 300),
+          category: record.category.slice(0, 120),
+          description: record.description.slice(0, 3000),
+          imageUrl: (record.imageUrl || '').slice(0, 750000),
+          linkUrl: (record.linkUrl || '').slice(0, 500),
+          displayOrder: record.displayOrder,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(doc(db, 'research_information', cleanId), {
+          portalId: 'bnhs',
+          title: record.title.slice(0, 300),
+          category: record.category.slice(0, 120),
+          description: record.description.slice(0, 3000),
+          imageUrl: (record.imageUrl || '').slice(0, 750000),
+          linkUrl: (record.linkUrl || '').slice(0, 500),
+          displayOrder: record.displayOrder,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, docPath);
+    }
+    showToast('Research Information topic (1000 × 500) saved to Cloud Database.');
+  };
+
+  const handleDeleteInformationItem = async (itemId: string) => {
+    const cleanId = sanitizeId(itemId);
+    setLocalInformationItems((prev) => prev.filter((i) => i.id !== cleanId));
+    const exists = cloudInformationItems.some((i) => i.id === cleanId);
+    if (exists) {
+      const docPath = `research_information/${cleanId}`;
+      try {
+        await deleteDoc(doc(db, 'research_information', cleanId));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, docPath);
+      }
+    }
+    showToast('Topic removed from Research Information.');
+  };
+
   // Navigation helper to switch division view
   const navigateToDivision = (
     div: ResearchDivisionId,
@@ -1466,6 +1718,29 @@ export default function App() {
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, docPath);
+    }
+
+    // Record timeline milestone entry in 'status_history' collection for vertical timeline visualization
+    const historyId = sanitizeId(
+      `sh_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+    );
+    const histPath = `status_history/${historyId}`;
+    try {
+      await setDoc(doc(db, 'status_history', historyId), {
+        portalId: 'bnhs',
+        researchId: record.id,
+        previousStatus: previousStatus,
+        newStatus: newStatus,
+        evaluatorName: (evaluatorName || 'School Research Committee').slice(0, 160),
+        evaluatorUid: sanitizeId(
+          auth.currentUser?.uid || currentUser?.uid || 'bnhs_portal_admin'
+        ),
+        evaluationScore: Number(score || 0),
+        remarks: (remarks || '').slice(0, 1500),
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, histPath);
     }
 
     if (previousStatus !== newStatus) {
@@ -1756,6 +2031,44 @@ export default function App() {
           displayOrder: Number(ov.displayOrder || 0),
           isDeleted: Boolean(ov.isDeleted),
           updatedByUid: writerUid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    // 5. Sync Research Gallery items
+    for (const gal of activeGalleryItems) {
+      const cleanId = sanitizeId(gal.id);
+      try {
+        await setDoc(doc(db, 'research_gallery', cleanId), {
+          portalId: 'bnhs',
+          title: (gal.title || '').slice(0, 300),
+          caption: (gal.caption || '').slice(0, 1000),
+          imageUrl: (gal.imageUrl || '').slice(0, 750000),
+          displayOrder: Number(gal.displayOrder || 1),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    // 6. Sync Research Information topics
+    for (const info of activeInformationItems) {
+      const cleanId = sanitizeId(info.id);
+      try {
+        await setDoc(doc(db, 'research_information', cleanId), {
+          portalId: 'bnhs',
+          title: (info.title || '').slice(0, 300),
+          category: (info.category || '').slice(0, 120),
+          description: (info.description || '').slice(0, 3000),
+          imageUrl: (info.imageUrl || '').slice(0, 750000),
+          linkUrl: (info.linkUrl || '').slice(0, 500),
+          displayOrder: Number(info.displayOrder || 1),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -2285,6 +2598,26 @@ export default function App() {
                 </div>
               </div>
             </section>
+
+            {/* ==================== 1.1 RESEARCH GALLERY (1000 × 500 SLIDING PICTURES · 10S INTERVAL) ==================== */}
+            <ResearchGallerySection
+              items={activeGalleryItems}
+              isAdmin={isAdmin}
+              onOpenAdminManager={() => {
+                setActiveSection('directory');
+                setDirectoryTab('admin');
+              }}
+            />
+
+            {/* ==================== 1.2 RESEARCH INFORMATION (1000 × 500 TOPICS & AGENDA) ==================== */}
+            <ResearchInformationSection
+              items={activeInformationItems}
+              isAdmin={isAdmin}
+              onOpenAdminManager={() => {
+                setActiveSection('directory');
+                setDirectoryTab('admin');
+              }}
+            />
 
             {/* Full-Width 4-Column Institutional Statistics Row */}
             <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3433,6 +3766,12 @@ export default function App() {
                 onResetOverviewDefaults={handleResetOverviewDefaults}
                 subscriptions={allSubscriptions}
                 emailAlertLogs={emailAlertLogs}
+                galleryItems={activeGalleryItems}
+                onSaveGalleryItem={handleSaveGalleryItem}
+                onDeleteGalleryItem={handleDeleteGalleryItem}
+                informationItems={activeInformationItems}
+                onSaveInformationItem={handleSaveInformationItem}
+                onDeleteInformationItem={handleDeleteInformationItem}
               />
             )}
           </section>

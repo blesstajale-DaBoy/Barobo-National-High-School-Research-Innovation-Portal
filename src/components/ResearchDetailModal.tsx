@@ -25,6 +25,7 @@ import {
   downloadManuscriptWordDoc,
   getDivisionLabel,
 } from '../utils/reportExporter';
+import { ResearchStatusTimeline } from './ResearchStatusTimeline';
 
 interface ResearchDetailModalProps {
   record: ResearchRecord | null;
@@ -519,14 +520,17 @@ export const ResearchDetailModal: React.FC<ResearchDetailModalProps> = ({
             </p>
           </div>
 
-          {/* 06. Comments & Peer Feedback Section (Triggers Email Alerts to Subscribed Users) */}
+          {/* 06. Vertical Timeline of Status Changes from Firestore */}
+          <ResearchStatusTimeline record={record} />
+
+          {/* 07. Comments & Peer Feedback Section (Triggers Email Alerts to Subscribed Users) */}
           <div className="p-5 bg-[#FAF9F5] border border-zinc-200 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-200 pb-3">
               <div>
                 <h3 className="text-xs font-semibold text-zinc-900 flex items-center gap-1.5">
                   <MessageSquare className="w-4 h-4 text-[#6B1420]" />
                   <span>
-                    06. Research Comments &amp; Peer Feedback ({comments.length})
+                    07. Research Comments &amp; Peer Feedback ({comments.length})
                   </span>
                 </h3>
                 <p className="text-xs text-zinc-600 mt-0.5">

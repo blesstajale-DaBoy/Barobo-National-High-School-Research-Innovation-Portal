@@ -526,6 +526,148 @@
         }
       },
       "required": ["uid", "appointedNote", "createdAt"]
+    },
+    "StatusHistoryEntry": {
+      "title": "StatusHistoryEntry",
+      "description": "Chronological audit milestone of a research project's workflow status change at Barobo National High School.",
+      "type": "object",
+      "properties": {
+        "portalId": {
+          "type": "string",
+          "enum": ["bnhs"],
+          "maxLength": 10
+        },
+        "researchId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "previousStatus": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "newStatus": {
+          "type": "string",
+          "enum": ["Pending Review", "Ongoing", "Completed", "Approved", "Revision Requested", "Archived"],
+          "maxLength": 30
+        },
+        "evaluatorName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "evaluatorUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "evaluationScore": {
+          "type": "number"
+        },
+        "remarks": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "portalId",
+        "researchId",
+        "previousStatus",
+        "newStatus",
+        "evaluatorName",
+        "evaluatorUid",
+        "evaluationScore",
+        "remarks",
+        "createdAt"
+      ]
+    },
+    "ResearchGalleryItem": {
+      "title": "ResearchGalleryItem",
+      "description": "1000x500 sliding photograph for the Overview Research Gallery managed by BNHS Administrators.",
+      "type": "object",
+      "properties": {
+        "portalId": {
+          "type": "string",
+          "enum": ["bnhs"],
+          "maxLength": 10
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "caption": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "imageUrl": {
+          "type": "string",
+          "maxLength": 750000
+        },
+        "displayOrder": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["portalId", "title", "caption", "imageUrl", "displayOrder", "createdAt", "updatedAt"]
+    },
+    "ResearchInformationItem": {
+      "title": "ResearchInformationItem",
+      "description": "1000x500 institutional research guidance or mandate panel for the Overview section.",
+      "type": "object",
+      "properties": {
+        "portalId": {
+          "type": "string",
+          "enum": ["bnhs"],
+          "maxLength": 10
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "imageUrl": {
+          "type": "string",
+          "maxLength": 750000
+        },
+        "linkUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "displayOrder": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["portalId", "title", "category", "description", "imageUrl", "linkUrl", "displayOrder", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -556,6 +698,18 @@
     "/admins/{adminUid}": {
       "schema": { "$ref": "#/entities/AdminRecord" },
       "description": "Trusted administrator lookup collection for RBAC enforcement."
+    },
+    "/status_history/{historyId}": {
+      "schema": { "$ref": "#/entities/StatusHistoryEntry" },
+      "description": "Audit milestones of status transitions, evaluator remarks, and dates for research entries."
+    },
+    "/research_gallery/{galleryId}": {
+      "schema": { "$ref": "#/entities/ResearchGalleryItem" },
+      "description": "Research Gallery sliding photos for the Overview page (1000x500)."
+    },
+    "/research_information/{infoId}": {
+      "schema": { "$ref": "#/entities/ResearchInformationItem" },
+      "description": "Research Information cards and guidance slides for the Overview page (1000x500)."
     }
   }
 }

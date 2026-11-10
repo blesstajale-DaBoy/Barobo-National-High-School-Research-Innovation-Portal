@@ -23,6 +23,8 @@ import {
   OverviewItemRecord,
   ResearchSubscriptionRecord,
   EmailAlertLogRecord,
+  ResearchGalleryItemRecord,
+  ResearchInformationItemRecord,
 } from '../data/bnhsTaxonomy';
 import {
   downloadResearchInventoryCsv,
@@ -70,6 +72,16 @@ interface AdminEvaluationViewProps {
   onResetOverviewDefaults: () => Promise<void>;
   subscriptions: ResearchSubscriptionRecord[];
   emailAlertLogs: EmailAlertLogRecord[];
+  galleryItems?: ResearchGalleryItemRecord[];
+  onSaveGalleryItem?: (
+    item: Omit<ResearchGalleryItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>
+  ) => Promise<void>;
+  onDeleteGalleryItem?: (itemId: string) => Promise<void>;
+  informationItems?: ResearchInformationItemRecord[];
+  onSaveInformationItem?: (
+    item: Omit<ResearchInformationItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>
+  ) => Promise<void>;
+  onDeleteInformationItem?: (itemId: string) => Promise<void>;
 }
 
 export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
@@ -90,6 +102,12 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
   onResetOverviewDefaults,
   subscriptions,
   emailAlertLogs,
+  galleryItems = [],
+  onSaveGalleryItem,
+  onDeleteGalleryItem,
+  informationItems = [],
+  onSaveInformationItem,
+  onDeleteInformationItem,
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -97,6 +115,9 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
   const [syncMessage, setSyncMessage] = useState<string>('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmDeleteResearchId, setConfirmDeleteResearchId] = useState<string | null>(null);
+
+  // Sub-tabs for Overview visual sections: Cards, Gallery (1000x500), Information (1000x500)
+  const [activeVisualTab, setActiveVisualTab] = useState<'overview' | 'gallery' | 'information'>('overview');
 
   // Overview Section Manager State (Add / Edit / Delete / Upload Photo)
   const [isOverviewFormOpen, setIsOverviewFormOpen] = useState<boolean>(false);
@@ -113,6 +134,32 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
   const [savingOverview, setSavingOverview] = useState<boolean>(false);
   const [ovFeedback, setOvFeedback] = useState<string>('');
   const [confirmDeleteOvId, setConfirmDeleteOvId] = useState<string | null>(null);
+
+  // Research Gallery Manager State (1000 x 500 Sliding Pictures)
+  const [isGalleryFormOpen, setIsGalleryFormOpen] = useState<boolean>(false);
+  const [editingGalleryId, setEditingGalleryId] = useState<string | null>(null);
+  const [galTitle, setGalTitle] = useState<string>('');
+  const [galCaption, setGalCaption] = useState<string>('');
+  const [galImageUrl, setGalImageUrl] = useState<string>('');
+  const [galWebLinkInput, setGalWebLinkInput] = useState<string>('');
+  const [galOrder, setGalOrder] = useState<number>(1);
+  const [savingGallery, setSavingGallery] = useState<boolean>(false);
+  const [galFeedback, setGalFeedback] = useState<string>('');
+  const [confirmDeleteGalId, setConfirmDeleteGalId] = useState<string | null>(null);
+
+  // Research Information Manager State (1000 x 500 Topics)
+  const [isInfoFormOpen, setIsInfoFormOpen] = useState<boolean>(false);
+  const [editingInfoId, setEditingInfoId] = useState<string | null>(null);
+  const [infoTitle, setInfoTitle] = useState<string>('');
+  const [infoCategory, setInfoCategory] = useState<string>('Basic Education Research Agenda (BERA)');
+  const [infoDescription, setInfoDescription] = useState<string>('');
+  const [infoImageUrl, setInfoImageUrl] = useState<string>('');
+  const [infoWebLinkInput, setInfoWebLinkInput] = useState<string>('');
+  const [infoLinkUrl, setInfoLinkUrl] = useState<string>('');
+  const [infoOrder, setInfoOrder] = useState<number>(1);
+  const [savingInfo, setSavingInfo] = useState<boolean>(false);
+  const [infoFeedback, setInfoFeedback] = useState<string>('');
+  const [confirmDeleteInfoId, setConfirmDeleteInfoId] = useState<string | null>(null);
 
   const pendingCount = researches.filter((r) => r.status === 'Pending Review').length;
   const approvedCount = researches.filter((r) => r.status === 'Approved').length;
@@ -246,6 +293,168 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
     }
   };
 
+  // Gallery Manager Handlers (1000 x 500 Sliding Pictures)
+  const openAddGalleryItem = () => {
+    setEditingGalleryId(null);
+    setGalTitle('');
+    setGalCaption('');
+    setGalImageUrl('');
+    setGalWebLinkInput('');
+    setGalOrder(galleryItems.length + 1);
+    setIsGalleryFormOpen(true);
+    setGalFeedback('');
+  };
+
+  const openEditGalleryItem = (item: ResearchGalleryItemRecord) => {
+    setEditingGalleryId(item.id);
+    setGalTitle(item.title);
+    setGalCaption(item.caption);
+    setGalImageUrl(item.imageUrl);
+    setGalWebLinkInput(item.imageUrl.startsWith('data:') ? '' : item.imageUrl);
+    setGalOrder(item.displayOrder);
+    setIsGalleryFormOpen(true);
+    setGalFeedback('');
+  };
+
+  const handleGalleryPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const rawDataUrl = String(event.target?.result || '');
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1000;
+        canvas.height = 500;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, 1000, 500);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          setGalImageUrl(compressed);
+        } else {
+          setGalImageUrl(rawDataUrl);
+        }
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleGalleryFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!galTitle.trim() || !onSaveGalleryItem) return;
+    setSavingGallery(true);
+    setGalFeedback('');
+    try {
+      const id = editingGalleryId || `gallery_${Date.now()}`;
+      const finalImg = resolveOverviewImageLink(
+        galImageUrl || galWebLinkInput || '/src/assets/images/bnhs_gallery_stem_fair_1794325399735.jpg'
+      );
+      await onSaveGalleryItem({
+        id,
+        title: galTitle.trim(),
+        caption: galCaption.trim(),
+        imageUrl: finalImg,
+        displayOrder: Number(galOrder || 1),
+      });
+      setIsGalleryFormOpen(false);
+      setEditingGalleryId(null);
+      setGalFeedback(
+        editingGalleryId
+          ? 'Gallery photo and caption updated successfully (1000 × 500).'
+          : 'New photo added to the 1000 × 500 Research Gallery.'
+      );
+    } finally {
+      setSavingGallery(false);
+    }
+  };
+
+  // Information Manager Handlers (1000 x 500 Guidance Topics)
+  const openAddInfoItem = () => {
+    setEditingInfoId(null);
+    setInfoTitle('');
+    setInfoCategory('Basic Education Research Agenda (BERA)');
+    setInfoDescription('');
+    setInfoImageUrl('');
+    setInfoWebLinkInput('');
+    setInfoLinkUrl('');
+    setInfoOrder(informationItems.length + 1);
+    setIsInfoFormOpen(true);
+    setInfoFeedback('');
+  };
+
+  const openEditInfoItem = (item: ResearchInformationItemRecord) => {
+    setEditingInfoId(item.id);
+    setInfoTitle(item.title);
+    setInfoCategory(item.category);
+    setInfoDescription(item.description);
+    setInfoImageUrl(item.imageUrl || '');
+    setInfoWebLinkInput(item.imageUrl?.startsWith('data:') ? '' : (item.imageUrl || ''));
+    setInfoLinkUrl(item.linkUrl || '');
+    setInfoOrder(item.displayOrder);
+    setIsInfoFormOpen(true);
+    setInfoFeedback('');
+  };
+
+  const handleInfoPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const rawDataUrl = String(event.target?.result || '');
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1000;
+        canvas.height = 500;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, 1000, 500);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          setInfoImageUrl(compressed);
+        } else {
+          setInfoImageUrl(rawDataUrl);
+        }
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleInfoFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!infoTitle.trim() || !onSaveInformationItem) return;
+    setSavingInfo(true);
+    setInfoFeedback('');
+    try {
+      const id = editingInfoId || `info_${Date.now()}`;
+      const finalImg = resolveOverviewImageLink(
+        infoImageUrl || infoWebLinkInput || '/src/assets/images/bnhs_info_research_agenda_1794325398231.jpg'
+      );
+      await onSaveInformationItem({
+        id,
+        title: infoTitle.trim(),
+        category: infoCategory.trim(),
+        description: infoDescription.trim(),
+        imageUrl: finalImg,
+        linkUrl: infoLinkUrl.trim(),
+        displayOrder: Number(infoOrder || 1),
+      });
+      setIsInfoFormOpen(false);
+      setEditingInfoId(null);
+      setInfoFeedback(
+        editingInfoId
+          ? 'Research Information topic updated successfully (1000 × 500).'
+          : 'New Research Information topic added (1000 × 500).'
+      );
+    } finally {
+      setSavingInfo(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Admin & Evaluation Header */}
@@ -341,348 +550,974 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
         </div>
       )}
 
-      {/* ==================== ADMIN OVERVIEW SECTION MANAGER (ADD, EDIT, DELETE & UPLOAD PHOTO) ==================== */}
+      {/* ==================== ADMIN OVERVIEW, GALLERY & INFORMATION MANAGER (ADD, EDIT, DELETE & UPLOAD PHOTO) ==================== */}
       <div className="bg-white border border-zinc-200 p-6 md:p-8 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
-          <div>
-            <div className="text-xs text-[#6B1420] font-semibold flex items-center gap-1.5">
-              <ImageIcon className="w-4 h-4" />
-              <span>Overview Section Customization &amp; Photo Upload Manager</span>
-            </div>
-            <h3 className="text-xl font-display font-semibold text-zinc-900 mt-0.5">
-              Manage Overview Section (Add, Edit, Delete &amp; Upload Photo)
-            </h3>
-            <p className="text-xs text-zinc-600 mt-1">
-              Customize the Overview Hero Banner and Division/Highlight Cards displayed on the Overview page. Upload new photos, edit titles and descriptions, add new highlight cards, or delete items you want to change.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              onClick={async () => {
-                setIsOverviewFormOpen(false);
-                setEditingOverviewId(null);
-                setConfirmDeleteOvId(null);
-                await onResetOverviewDefaults();
-                setOvFeedback(
-                  'Default Overview Hero Banner and Three Major Research Division cards have been restored.'
-                );
-              }}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Restore Default Overview</span>
-            </button>
-          </div>
+        {/* Visual Content Section Selector Tabs */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 pb-3">
+          <button
+            type="button"
+            onClick={() => setActiveVisualTab('overview')}
+            className={`px-4 py-2 text-xs font-semibold transition-colors ${
+              activeVisualTab === 'overview'
+                ? 'bg-[#6B1420] text-white shadow-sm'
+                : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+            }`}
+          >
+            01. Overview Division &amp; Hero Cards
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveVisualTab('gallery')}
+            className={`px-4 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              activeVisualTab === 'gallery'
+                ? 'bg-[#6B1420] text-white shadow-sm'
+                : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+            }`}
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            <span>02. Research Gallery (1000 × 500 Sliding Pictures · 10s)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveVisualTab('information')}
+            className={`px-4 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              activeVisualTab === 'information'
+                ? 'bg-[#6B1420] text-white shadow-sm'
+                : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>03. Research Information (1000 × 500 Guidance &amp; Agenda)</span>
+          </button>
         </div>
 
-        {ovFeedback && (
-          <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
-            <span>{ovFeedback}</span>
-          </div>
-        )}
-
-        {/* Edit Overview Item Form with Photo Upload */}
-        {isOverviewFormOpen && (
-          <form
-            onSubmit={handleOverviewFormSubmit}
-            className="p-5 bg-[#FAF9F5] border border-[#6B1420]/30 space-y-4"
-          >
-            <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
-              <h4 className="text-sm font-display font-semibold text-[#6B1420]">
-                Edit Overview Section Item ({ovType === 'hero' ? 'Hero Banner' : 'Overview Card'})
-              </h4>
-              <button
-                type="button"
-                onClick={() => setIsOverviewFormOpen(false)}
-                className="text-xs text-zinc-500 hover:text-zinc-900"
-              >
-                Cancel
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* ================= TAB 1: OVERVIEW HERO & DIVISION CARDS ================= */}
+        {activeVisualTab === 'overview' && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
               <div>
-                <label className="block text-xs font-medium text-zinc-700 mb-1">
-                  Overview Section Type
-                </label>
-                <select
-                  value={ovType}
-                  onChange={(e) => setOvType(e.target.value as 'hero' | 'card')}
-                  disabled={editingOverviewId === 'overview_hero_main'}
-                  className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
-                >
-                  <option value="card">Overview Division / Highlight Card</option>
-                  <option value="hero">Main Overview Hero Banner</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-zinc-700 mb-1">
-                  {ovType === 'hero' ? 'Top Institutional Kicker' : 'Card Code / Badge'}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={ovCode}
-                  onChange={(e) => setOvCode(e.target.value)}
-                  placeholder="e.g., DIV-01 or HIGHLIGHT-01"
-                  className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-zinc-700 mb-1">
-                  Target Division Link
-                </label>
-                <select
-                  value={ovDivisionLink}
-                  onChange={(e) =>
-                    setOvDivisionLink(
-                      e.target.value as 'none' | 'basic' | 'action' | 'tuklas'
-                    )
-                  }
-                  className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
-                >
-                  <option value="basic">Basic Research</option>
-                  <option value="action">Action Research</option>
-                  <option value="tuklas">TUKLAS Project Fair</option>
-                  <option value="none">General Overview (No Division Jump)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-zinc-700 mb-1">
-                  Title <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={ovTitle}
-                  onChange={(e) => setOvTitle(e.target.value)}
-                  placeholder="Enter Overview section title..."
-                  className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-zinc-700 mb-1">
-                  {ovType === 'hero' ? 'Photo Overlay Caption' : 'Subtitle / Theme Focus'}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={ovSubtitle}
-                  onChange={(e) => setOvSubtitle(e.target.value)}
-                  placeholder="Enter subtitle or caption..."
-                  className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
-                Description / Summary Content <span className="text-red-600">*</span>
-              </label>
-              <textarea
-                rows={3}
-                required
-                value={ovDescription}
-                onChange={(e) => setOvDescription(e.target.value)}
-                placeholder="Enter detailed overview description..."
-                className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
-              />
-            </div>
-
-            {/* Photo Upload & Preview (Local Computer, Google Drive Link, or Website Link) */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white border border-zinc-200 p-4">
-              <div className="md:col-span-4">
-                <div className="aspect-[16/10] w-full bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center relative">
-                  {ovImageUrl ? (
-                    <img
-                      src={resolveOverviewImageLink(ovImageUrl)}
-                      alt="Overview Preview"
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-xs text-zinc-400">No photo selected</span>
-                  )}
+                <div className="text-xs text-[#6B1420] font-semibold flex items-center gap-1.5">
+                  <ImageIcon className="w-4 h-4" />
+                  <span>Overview Section Customization &amp; Photo Upload Manager</span>
                 </div>
-              </div>
-              <div className="md:col-span-8 space-y-3">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-800 mb-1.5">
-                    Option 1: Upload Photo from Local Computer (JPG, PNG, WEBP, or GIF)
-                  </label>
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Upload Photo from Computer</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleOverviewPhotoUpload}
-                        className="hidden"
-                      />
-                    </label>
-                    {ovImageUrl.startsWith('data:') && (
-                      <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1">
-                        Local Photo Loaded
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-zinc-100">
-                  <label className="block text-xs font-semibold text-zinc-800 mb-1.5 flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-[#6B1420]" />
-                    <span>
-                      Option 2: Upload Photo via Google Drive Link or Any Website Link
-                    </span>
-                  </label>
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                    <input
-                      type="url"
-                      value={ovWebLinkInput}
-                      onChange={(e) => handleApplyWebOrGoogleLink(e.target.value)}
-                      placeholder="Paste Google Drive photo link (https://drive.google.com/...) or any website image URL (https://...)"
-                      className="flex-1 px-3 py-2 text-xs border border-zinc-300 bg-[#FAF9F5] focus:outline-none focus:border-[#6B1420]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleApplyWebOrGoogleLink(ovWebLinkInput)}
-                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors whitespace-nowrap shrink-0"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Apply Google / Website Link</span>
-                    </button>
-                    {ovWebLinkInput.trim() && (
-                      <a
-                        href={ovWebLinkInput.trim()}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-1 px-2.5 py-2 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 whitespace-nowrap shrink-0"
-                        title="Open source link in new tab"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Open Link</span>
-                      </a>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-zinc-500 mt-1">
-                    Supports Google Drive sharing links (make sure the file is set to &ldquo;Anyone with the link can view&rdquo;) as well as any direct website image link (JPG, PNG, WEBP, GIF).
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsOverviewFormOpen(false)}
-                className="px-4 py-2 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={savingOverview}
-                className="px-5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] disabled:opacity-50"
-              >
-                {savingOverview ? 'Saving Overview Changes...' : 'Save Overview Changes & Photo'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* Current Overview Items Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {overviewItems.map((item) => (
-            <div
-              key={item.id}
-              className="border border-zinc-200 bg-[#FAF9F5] flex flex-col justify-between overflow-hidden"
-            >
-              <div>
-                <div className="aspect-[16/10] w-full bg-zinc-200 relative overflow-hidden flex items-center justify-center">
-                  {item.imageUrl ? (
-                    <img
-                      src={resolveOverviewImageLink(item.imageUrl)}
-                      alt={item.title}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="text-center p-4 text-xs text-zinc-500">
-                      No Photo Uploaded
-                    </div>
-                  )}
-                  <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#6B1420] text-white text-[10px] font-mono font-semibold">
-                    {item.itemType === 'hero' ? 'HERO BANNER' : item.code}
-                  </div>
-                </div>
-                <div className="p-4 space-y-1.5">
-                  <div className="text-[11px] text-[#6B1420] font-semibold line-clamp-1">
-                    {item.subtitle}
-                  </div>
-                  <h4 className="text-sm font-display font-semibold text-zinc-900 line-clamp-2">
-                    {item.title}
-                  </h4>
-                  <p className="text-xs text-zinc-600 line-clamp-2">
-                    {item.description}
-                  </p>
-                </div>
+                <h3 className="text-xl font-display font-semibold text-zinc-900 mt-0.5">
+                  Manage Overview Section (Add, Edit, Delete &amp; Upload Photo)
+                </h3>
+                <p className="text-xs text-zinc-600 mt-1">
+                  Customize the Overview Hero Banner and Division/Highlight Cards displayed on the Overview page. Upload new photos, edit titles and descriptions, or restore defaults.
+                </p>
               </div>
 
-              <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
                 <button
                   type="button"
-                  onClick={() => openEditOverviewItem(item)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
+                  onClick={async () => {
+                    setIsOverviewFormOpen(false);
+                    setEditingOverviewId(null);
+                    setConfirmDeleteOvId(null);
+                    await onResetOverviewDefaults();
+                    setOvFeedback(
+                      'Default Overview Hero Banner and Three Major Research Division cards have been restored.'
+                    );
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Edit / Photo</span>
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Restore Default Overview</span>
                 </button>
-
-                {confirmDeleteOvId === item.id ? (
-                  <div className="inline-flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await onDeleteOverviewItem(item.id);
-                        setConfirmDeleteOvId(null);
-                        setOvFeedback(`Deleted "${item.title}" from the Overview section.`);
-                      }}
-                      className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
-                    >
-                      Confirm Delete
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteOvId(null)}
-                      className="px-1.5 py-1 text-[11px] text-zinc-600"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDeleteOvId(item.id)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
-                  </button>
-                )}
               </div>
             </div>
-          ))}
-        </div>
+
+            {ovFeedback && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>{ovFeedback}</span>
+              </div>
+            )}
+
+            {/* Edit Overview Item Form with Photo Upload */}
+            {isOverviewFormOpen && (
+              <form
+                onSubmit={handleOverviewFormSubmit}
+                className="p-5 bg-[#FAF9F5] border border-[#6B1420]/30 space-y-4"
+              >
+                <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+                  <h4 className="text-sm font-display font-semibold text-[#6B1420]">
+                    Edit Overview Section Item ({ovType === 'hero' ? 'Hero Banner' : 'Overview Card'})
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setIsOverviewFormOpen(false)}
+                    className="text-xs text-zinc-500 hover:text-zinc-900"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      Overview Section Type
+                    </label>
+                    <select
+                      value={ovType}
+                      onChange={(e) => setOvType(e.target.value as 'hero' | 'card')}
+                      disabled={editingOverviewId === 'overview_hero_main'}
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    >
+                      <option value="card">Overview Division / Highlight Card</option>
+                      <option value="hero">Main Overview Hero Banner</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      {ovType === 'hero' ? 'Top Institutional Kicker' : 'Card Code / Badge'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={ovCode}
+                      onChange={(e) => setOvCode(e.target.value)}
+                      placeholder="e.g., DIV-01 or HIGHLIGHT-01"
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      Target Division Link
+                    </label>
+                    <select
+                      value={ovDivisionLink}
+                      onChange={(e) =>
+                        setOvDivisionLink(
+                          e.target.value as 'none' | 'basic' | 'action' | 'tuklas'
+                        )
+                      }
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    >
+                      <option value="basic">Basic Research</option>
+                      <option value="action">Action Research</option>
+                      <option value="tuklas">TUKLAS Project Fair</option>
+                      <option value="none">General Overview (No Division Jump)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      Title <span className="text-red-600">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={ovTitle}
+                      onChange={(e) => setOvTitle(e.target.value)}
+                      placeholder="Enter Overview section title..."
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      {ovType === 'hero' ? 'Photo Overlay Caption' : 'Subtitle / Theme Focus'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={ovSubtitle}
+                      onChange={(e) => setOvSubtitle(e.target.value)}
+                      placeholder="Enter subtitle or caption..."
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-700 mb-1">
+                    Description / Summary Content <span className="text-red-600">*</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={ovDescription}
+                    onChange={(e) => setOvDescription(e.target.value)}
+                    placeholder="Enter detailed overview description..."
+                    className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                  />
+                </div>
+
+                {/* Photo Upload & Preview */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white border border-zinc-200 p-4">
+                  <div className="md:col-span-4">
+                    <div className="aspect-[16/10] w-full bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center relative">
+                      {ovImageUrl ? (
+                        <img
+                          src={resolveOverviewImageLink(ovImageUrl)}
+                          alt="Overview Preview"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-xs text-zinc-400">No photo selected</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="md:col-span-8 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-800 mb-1.5">
+                        Option 1: Upload Photo from Local Computer (JPG, PNG, WEBP, or GIF)
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Photo from Computer</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleOverviewPhotoUpload}
+                            className="hidden"
+                          />
+                        </label>
+                        {ovImageUrl.startsWith('data:') && (
+                          <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1">
+                            Local Photo Loaded
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-zinc-100">
+                      <label className="block text-xs font-semibold text-zinc-800 mb-1.5 flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-[#6B1420]" />
+                        <span>
+                          Option 2: Upload Photo via Google Drive Link or Any Website Link
+                        </span>
+                      </label>
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <input
+                          type="url"
+                          value={ovWebLinkInput}
+                          onChange={(e) => handleApplyWebOrGoogleLink(e.target.value)}
+                          placeholder="Paste Google Drive photo link (https://drive.google.com/...) or any website image URL"
+                          className="flex-1 px-3 py-2 text-xs border border-zinc-300 bg-[#FAF9F5] focus:outline-none focus:border-[#6B1420]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleApplyWebOrGoogleLink(ovWebLinkInput)}
+                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors whitespace-nowrap shrink-0"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Apply Link</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsOverviewFormOpen(false)}
+                    className="px-4 py-2 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingOverview}
+                    className="px-5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] disabled:opacity-50"
+                  >
+                    {savingOverview ? 'Saving Overview Changes...' : 'Save Overview Changes & Photo'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Current Overview Items Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {overviewItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="border border-zinc-200 bg-[#FAF9F5] flex flex-col justify-between overflow-hidden"
+                >
+                  <div>
+                    <div className="aspect-[16/10] w-full bg-zinc-200 relative overflow-hidden flex items-center justify-center">
+                      {item.imageUrl ? (
+                        <img
+                          src={resolveOverviewImageLink(item.imageUrl)}
+                          alt={item.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="text-center p-4 text-xs text-zinc-500">
+                          No Photo Uploaded
+                        </div>
+                      )}
+                      <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#6B1420] text-white text-[10px] font-mono font-semibold">
+                        {item.itemType === 'hero' ? 'HERO BANNER' : item.code}
+                      </div>
+                    </div>
+                    <div className="p-4 space-y-1.5">
+                      <div className="text-[11px] text-[#6B1420] font-semibold line-clamp-1">
+                        {item.subtitle}
+                      </div>
+                      <h4 className="text-sm font-display font-semibold text-zinc-900 line-clamp-2">
+                        {item.title}
+                      </h4>
+                      <p className="text-xs text-zinc-600 line-clamp-2">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => openEditOverviewItem(item)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit / Photo</span>
+                    </button>
+
+                    {confirmDeleteOvId === item.id ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await onDeleteOverviewItem(item.id);
+                            setConfirmDeleteOvId(null);
+                            setOvFeedback(`Deleted "${item.title}" from the Overview section.`);
+                          }}
+                          className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
+                        >
+                          Confirm Delete
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteOvId(null)}
+                          className="px-1.5 py-1 text-[11px] text-zinc-600"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteOvId(item.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ================= TAB 2: RESEARCH GALLERY (1000 × 500 SLIDING PICTURES · 10S) ================= */}
+        {activeVisualTab === 'gallery' && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
+              <div>
+                <div className="text-xs text-[#6B1420] font-semibold flex items-center gap-1.5">
+                  <ImageIcon className="w-4 h-4" />
+                  <span>Research Gallery Manager · 1000 × 500 Dimensions · 10s Slideshow</span>
+                </div>
+                <h3 className="text-xl font-display font-semibold text-zinc-900 mt-0.5">
+                  Research Gallery Pictures (Upload, Edit, Delete &amp; 1000 × 500 Sizing)
+                </h3>
+                <p className="text-xs text-zinc-600 mt-1">
+                  Manage the sliding pictures shown on the Overview page below the Hero Banner and before the Total Indexed Studies section. Automatically changes every 10 seconds with exact 1000 by 500 dimensions.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={openAddGalleryItem}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Picture to Gallery (1000 × 500)</span>
+                </button>
+              </div>
+            </div>
+
+            {galFeedback && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>{galFeedback}</span>
+              </div>
+            )}
+
+            {/* Add / Edit Gallery Item Form (1000 x 500) */}
+            {isGalleryFormOpen && (
+              <form
+                onSubmit={handleGalleryFormSubmit}
+                className="p-5 bg-[#FAF9F5] border border-[#6B1420]/30 space-y-4"
+              >
+                <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+                  <h4 className="text-sm font-display font-semibold text-[#6B1420]">
+                    {editingGalleryId ? 'Edit Gallery Picture' : 'Add New Gallery Picture'} (Size: 1000 × 500)
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setIsGalleryFormOpen(false)}
+                    className="text-xs text-zinc-500 hover:text-zinc-900"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      Picture Title <span className="text-red-600">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={galTitle}
+                      onChange={(e) => setGalTitle(e.target.value)}
+                      placeholder="e.g., BNHS Annual Science, Technology & Innovation Fair 2026"
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      Display Order (Slide Position)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={galOrder}
+                      onChange={(e) => setGalOrder(Number(e.target.value || 1))}
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-700 mb-1">
+                    Caption / Field Description <span className="text-red-600">*</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    required
+                    value={galCaption}
+                    onChange={(e) => setGalCaption(e.target.value)}
+                    placeholder="Provide context on what this research activity, project exhibition, or fieldwork photo represents..."
+                    className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                  />
+                </div>
+
+                {/* Photo Upload & 1000 x 500 Preview */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white border border-zinc-200 p-4">
+                  <div className="md:col-span-6">
+                    <div className="w-full aspect-[1000/500] bg-zinc-900 border border-zinc-300 overflow-hidden flex items-center justify-center relative">
+                      {galImageUrl ? (
+                        <img
+                          src={resolveOverviewImageLink(galImageUrl)}
+                          alt="1000x500 Gallery Preview"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-xs text-zinc-400">
+                          1000 × 500 Photo Preview Frame
+                        </span>
+                      )}
+                      <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/70 text-white font-mono text-[10px]">
+                        1000 × 500
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-6 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-800 mb-1.5">
+                        Option 1: Upload Photo from Local Computer (Auto-scaled to 1000 × 500)
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload &amp; Scale to 1000 × 500</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleGalleryPhotoUpload}
+                            className="hidden"
+                          />
+                        </label>
+                        {galImageUrl.startsWith('data:') && (
+                          <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1">
+                            Local File Loaded (1000 × 500)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-zinc-100">
+                      <label className="block text-xs font-semibold text-zinc-800 mb-1.5 flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-[#6B1420]" />
+                        <span>Option 2: Photo via Google Drive or Web Link (1000 × 500)</span>
+                      </label>
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <input
+                          type="url"
+                          value={galWebLinkInput}
+                          onChange={(e) => {
+                            setGalWebLinkInput(e.target.value);
+                            setGalImageUrl(resolveOverviewImageLink(e.target.value));
+                          }}
+                          placeholder="Paste Google Drive sharing link or direct website image URL"
+                          className="flex-1 px-3 py-2 text-xs border border-zinc-300 bg-[#FAF9F5] focus:outline-none focus:border-[#6B1420]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGalImageUrl(resolveOverviewImageLink(galWebLinkInput));
+                          }}
+                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors whitespace-nowrap shrink-0"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Apply</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsGalleryFormOpen(false)}
+                    className="px-4 py-2 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingGallery}
+                    className="px-5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] disabled:opacity-50"
+                  >
+                    {savingGallery ? 'Saving Gallery Picture...' : 'Save Gallery Picture (1000 × 500)'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Gallery Items Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {galleryItems.map((item, idx) => (
+                <div
+                  key={item.id}
+                  className="border border-zinc-200 bg-[#FAF9F5] flex flex-col justify-between overflow-hidden shadow-sm"
+                >
+                  <div>
+                    {/* Exact 1000 x 500 aspect ratio box */}
+                    <div className="w-full aspect-[1000/500] bg-zinc-900 relative overflow-hidden flex items-center justify-center">
+                      {item.imageUrl ? (
+                        <img
+                          src={resolveOverviewImageLink(item.imageUrl)}
+                          alt={item.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="text-center p-4 text-xs text-zinc-400">
+                          No Photo Provided
+                        </div>
+                      )}
+                      <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#6B1420] text-white text-[10px] font-mono font-semibold">
+                        Slide {idx + 1} · Order {item.displayOrder}
+                      </div>
+                      <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-black/60 text-white text-[10px] font-mono">
+                        1000 × 500
+                      </div>
+                    </div>
+                    <div className="p-4 space-y-1.5">
+                      <h4 className="text-sm font-display font-semibold text-zinc-900 line-clamp-1">
+                        {item.title}
+                      </h4>
+                      <p className="text-xs text-zinc-600 line-clamp-2">
+                        {item.caption}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => openEditGalleryItem(item)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit (1000 × 500)</span>
+                    </button>
+
+                    {confirmDeleteGalId === item.id ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (onDeleteGalleryItem) {
+                              await onDeleteGalleryItem(item.id);
+                              setConfirmDeleteGalId(null);
+                              setGalFeedback(`Deleted picture "${item.title}" from Gallery.`);
+                            }
+                          }}
+                          className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteGalId(null)}
+                          className="px-1.5 py-1 text-[11px] text-zinc-600"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteGalId(item.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ================= TAB 3: RESEARCH INFORMATION (1000 × 500 TOPICS & AGENDA) ================= */}
+        {activeVisualTab === 'information' && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
+              <div>
+                <div className="text-xs text-[#6B1420] font-semibold flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Research Information Manager · 1000 × 500 Guidance Frame</span>
+                </div>
+                <h3 className="text-xl font-display font-semibold text-zinc-900 mt-0.5">
+                  Research Information Topics (Upload, Edit, Delete &amp; 1000 × 500 Sizing)
+                </h3>
+                <p className="text-xs text-zinc-600 mt-1">
+                  Manage the institutional guidelines, BERA priorities, and ethics information displayed in the 1000 by 500 Research Information frame on the Overview page.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={openAddInfoItem}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Information Topic (1000 × 500)</span>
+                </button>
+              </div>
+            </div>
+
+            {infoFeedback && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>{infoFeedback}</span>
+              </div>
+            )}
+
+            {/* Add / Edit Information Item Form (1000 x 500) */}
+            {isInfoFormOpen && (
+              <form
+                onSubmit={handleInfoFormSubmit}
+                className="p-5 bg-[#FAF9F5] border border-[#6B1420]/30 space-y-4"
+              >
+                <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+                  <h4 className="text-sm font-display font-semibold text-[#6B1420]">
+                    {editingInfoId ? 'Edit Research Information Topic' : 'Add New Research Information Topic'} (Size: 1000 × 500)
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setIsInfoFormOpen(false)}
+                    className="text-xs text-zinc-500 hover:text-zinc-900"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      Information Topic Title <span className="text-red-600">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={infoTitle}
+                      onChange={(e) => setInfoTitle(e.target.value)}
+                      placeholder="e.g., Basic Education Research Agenda (BERA) Priorities"
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      Category / Focus
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={infoCategory}
+                      onChange={(e) => setInfoCategory(e.target.value)}
+                      placeholder="e.g., DepEd Research Agenda"
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-700 mb-1">
+                    Description &amp; Institutional Guidance <span className="text-red-600">*</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    required
+                    value={infoDescription}
+                    onChange={(e) => setInfoDescription(e.target.value)}
+                    placeholder="Enter policy overview, research steps, submission protocols, or ethics notes..."
+                    className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      Reference Web Link (Optional)
+                    </label>
+                    <input
+                      type="url"
+                      value={infoLinkUrl}
+                      onChange={(e) => setInfoLinkUrl(e.target.value)}
+                      placeholder="https://deped.gov.ph/research-agenda or institutional doc"
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 mb-1">
+                      Display Order
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={infoOrder}
+                      onChange={(e) => setInfoOrder(Number(e.target.value || 1))}
+                      className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Graphic / Photo Upload & 1000 x 500 Preview */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white border border-zinc-200 p-4">
+                  <div className="md:col-span-6">
+                    <div className="w-full aspect-[1000/500] bg-zinc-900 border border-zinc-300 overflow-hidden flex items-center justify-center relative">
+                      {infoImageUrl ? (
+                        <img
+                          src={resolveOverviewImageLink(infoImageUrl)}
+                          alt="1000x500 Info Preview"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-xs text-zinc-400">
+                          1000 × 500 Graphic Preview Frame
+                        </span>
+                      )}
+                      <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/70 text-white font-mono text-[10px]">
+                        1000 × 500
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-6 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-800 mb-1.5">
+                        Option 1: Upload Topic Graphic from Computer (Auto-scaled to 1000 × 500)
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload &amp; Scale to 1000 × 500</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleInfoPhotoUpload}
+                            className="hidden"
+                          />
+                        </label>
+                        {infoImageUrl.startsWith('data:') && (
+                          <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1">
+                            Local Graphic Loaded (1000 × 500)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-zinc-100">
+                      <label className="block text-xs font-semibold text-zinc-800 mb-1.5 flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-[#6B1420]" />
+                        <span>Option 2: Photo via Google Drive or Web Link (1000 × 500)</span>
+                      </label>
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <input
+                          type="url"
+                          value={infoWebLinkInput}
+                          onChange={(e) => {
+                            setInfoWebLinkInput(e.target.value);
+                            setInfoImageUrl(resolveOverviewImageLink(e.target.value));
+                          }}
+                          placeholder="Paste Google Drive link or direct website image URL"
+                          className="flex-1 px-3 py-2 text-xs border border-zinc-300 bg-[#FAF9F5] focus:outline-none focus:border-[#6B1420]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInfoImageUrl(resolveOverviewImageLink(infoWebLinkInput));
+                          }}
+                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors whitespace-nowrap shrink-0"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Apply</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsInfoFormOpen(false)}
+                    className="px-4 py-2 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingInfo}
+                    className="px-5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] disabled:opacity-50"
+                  >
+                    {savingInfo ? 'Saving Information Topic...' : 'Save Topic (1000 × 500)'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Information Items Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {informationItems.map((item, idx) => (
+                <div
+                  key={item.id}
+                  className="border border-zinc-200 bg-[#FAF9F5] flex flex-col justify-between overflow-hidden shadow-sm"
+                >
+                  <div>
+                    {/* Exact 1000 x 500 aspect ratio box */}
+                    <div className="w-full aspect-[1000/500] bg-zinc-900 relative overflow-hidden flex items-center justify-center">
+                      {item.imageUrl ? (
+                        <img
+                          src={resolveOverviewImageLink(item.imageUrl)}
+                          alt={item.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="text-center p-4 text-xs text-zinc-400">
+                          No Graphic Provided
+                        </div>
+                      )}
+                      <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#6B1420] text-white text-[10px] font-mono font-semibold">
+                        Topic {idx + 1} · {item.category}
+                      </div>
+                      <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-black/60 text-white text-[10px] font-mono">
+                        1000 × 500
+                      </div>
+                    </div>
+                    <div className="p-4 space-y-1.5">
+                      <h4 className="text-sm font-display font-semibold text-zinc-900 line-clamp-1">
+                        {item.title}
+                      </h4>
+                      <p className="text-xs text-zinc-600 line-clamp-3">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => openEditInfoItem(item)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit (1000 × 500)</span>
+                    </button>
+
+                    {confirmDeleteInfoId === item.id ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (onDeleteInformationItem) {
+                              await onDeleteInformationItem(item.id);
+                              setConfirmDeleteInfoId(null);
+                              setInfoFeedback(`Deleted topic "${item.title}".`);
+                            }
+                          }}
+                          className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteInfoId(null)}
+                          className="px-1.5 py-1 text-[11px] text-zinc-600"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteInfoId(item.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Workflow KPI Strip */}
