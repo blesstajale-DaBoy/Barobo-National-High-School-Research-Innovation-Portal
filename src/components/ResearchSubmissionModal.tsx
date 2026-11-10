@@ -300,7 +300,7 @@ export const ResearchSubmissionModal: React.FC<ResearchSubmissionModalProps> = (
                 [
                   { id: 'basic', label: '1. Basic Research', sub: 'Foundational & Policy' },
                   { id: 'action', label: '2. Action Research', sub: 'All 7 DepEd Themes' },
-                  { id: 'tuklas', label: '3. TUKLAS Project Fair', sub: '4 Major Categories' },
+                  { id: 'tuklas', label: '3. TUKLAS Project Fair', sub: '5 Major Categories & Innovation Expo' },
                 ] as const
               ).map((item) => (
                 <button
@@ -327,7 +327,7 @@ export const ResearchSubmissionModal: React.FC<ResearchSubmissionModalProps> = (
                 {division === 'action'
                   ? 'Action Research Theme (7 Official Themes)'
                   : division === 'tuklas'
-                  ? 'TUKLAS Major Category (4 Categories)'
+                  ? 'TUKLAS Major Category (5 Categories incl. Innovation Expo)'
                   : 'Basic Research Focus Area'}
               </label>
               <select

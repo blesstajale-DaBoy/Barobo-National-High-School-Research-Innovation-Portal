@@ -245,8 +245,17 @@
         },
         "role": {
           "type": "string",
-          "enum": ["Student Researcher", "Teacher Researcher", "Master Teacher / Adviser", "Research Coordinator"],
-          "maxLength": 40
+          "enum": [
+            "Student Researcher",
+            "Teacher Researcher",
+            "Master Teacher Researcher",
+            "Teacher/Adviser",
+            "Master Teacher / Adviser",
+            "School Research Grammarian",
+            "School Research Statistician",
+            "Research Coordinator"
+          ],
+          "maxLength": 50
         },
         "departmentOrStrand": {
           "type": "string",
@@ -274,6 +283,14 @@
           "type": "string",
           "maxLength": 500
         },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 750000
+        },
+        "photoDriveUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time"
@@ -294,6 +311,8 @@
         "bio",
         "institutionIdCode",
         "driveFolderUrl",
+        "photoUrl",
+        "photoDriveUrl",
         "createdAt",
         "updatedAt"
       ]

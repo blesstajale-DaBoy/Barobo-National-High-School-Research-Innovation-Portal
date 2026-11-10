@@ -41,18 +41,41 @@ export interface ResearchRecord {
   isBaseline?: boolean;
 }
 
+export type ResearcherRoleType =
+  | 'Student Researcher'
+  | 'Teacher Researcher'
+  | 'Master Teacher Researcher'
+  | 'Teacher/Adviser'
+  | 'Master Teacher / Adviser'
+  | 'School Research Grammarian'
+  | 'School Research Statistician'
+  | 'Research Coordinator';
+
+export const RESEARCHER_ACCOUNT_CLASSIFICATIONS: ResearcherRoleType[] = [
+  'Teacher Researcher',
+  'Master Teacher Researcher',
+  'Teacher/Adviser',
+  'School Research Grammarian',
+  'School Research Statistician',
+  'Student Researcher',
+  'Master Teacher / Adviser',
+  'Research Coordinator',
+];
+
 export interface ResearcherProfileRecord {
   id: string;
   portalId: 'bnhs';
   uid: string;
   fullName: string;
-  role: 'Student Researcher' | 'Teacher Researcher' | 'Master Teacher / Adviser' | 'Research Coordinator';
+  role: ResearcherRoleType;
   departmentOrStrand: string;
   gradeOrPosition: string;
   specialization: string;
   bio: string;
   institutionIdCode: string;
   driveFolderUrl: string;
+  photoUrl?: string;
+  photoDriveUrl?: string;
   isBaseline?: boolean;
 }
 
@@ -95,9 +118,9 @@ export const RESEARCH_DIVISIONS: DivisionDefinition[] = [
     id: 'tuklas',
     code: 'DIV-03',
     name: 'TUKLAS: A Research Project Fair',
-    subtitle: 'Four Major Categories & Subcategories',
+    subtitle: 'Five Major Categories (Including Innovation Expo)',
     description:
-      'Student and mentored STEM innovation projects competing across Life Science, Physical Science, Robotics & Intelligent Machines, and Mathematics & Computational Sciences.',
+      'Student and mentored STEM & innovation projects competing across Life Science, Physical Science, Robotics & Intelligent Machines, Mathematics & Computational Sciences, and the Innovation Expo.',
     image: PORTAL_IMAGES.tuklasFair,
   },
 ];
@@ -301,6 +324,19 @@ export const TUKLAS_CATEGORIES: {
     ],
     description:
       'Mathematical modeling, epidemiological and climate simulations, optimization algorithms, and computational learning platforms.',
+  },
+  {
+    id: 'tuklas-ie',
+    code: 'CAT-05 · IE',
+    name: 'Innovation Expo',
+    subcategories: [
+      'Educational & Instructional Technology Innovations',
+      'Sustainable Community & Livelihood Prototypes',
+      'Disaster Resilience, Health & Utility Inventions',
+      'Green Engineering & Upcycled Product Design',
+    ],
+    description:
+      'Applied student and faculty inventions, instructional devices, sustainable community livelihood prototypes, and utility models exhibited at the BNHS TUKLAS Innovation Expo.',
   },
 ];
 
@@ -874,6 +910,40 @@ export const INITIAL_BNHS_RESEARCHES: ResearchRecord[] = [
     updatedAtIso: '2026-10-19T15:00:00.000Z',
     isBaseline: true,
   },
+  {
+    id: 'bnhs_tuklas_ie_01',
+    portalId: 'bnhs',
+    title: 'Solar-Assisted Hybrid Coconut Husk & Seaweed Biomass Dehydrator for Smallholder Coastal Copra and Carrageenan Producers in Barobo',
+    division: 'tuklas',
+    category: 'Innovation Expo',
+    subcategory: 'Sustainable Community & Livelihood Prototypes',
+    abstract:
+      'Developed for the BNHS TUKLAS Innovation Expo, this student-faculty utility invention combines a polycarbonate solar thermal collector with an automated coconut-husk biomass backup heater and PID humidity controller to dry raw Eucheuma seaweed and copra 3.2 times faster than open-air sun drying during rainy monsoon weeks.',
+    keywords: 'Innovation Expo, Solar Biomass Dehydrator, Seaweed Drying, Livelihood Prototype, Barobo NHS',
+    authors: 'Jhon Rey M. Alvizo, Princess Diane C. Orcullo, Engr. Dennis L. Millan',
+    authorRole: 'Collaborative',
+    adviser: 'Engr. Dennis L. Millan',
+    departmentOrGrade: 'Grade 12 - STEM & TVL Industrial Arts',
+    schoolYear: '2026-2027',
+    status: 'Approved',
+    methodology:
+      'Engineering utility prototype fabrication and comparative thermal-efficiency testing across 15 batch trials measuring moisture reduction curves (from 84% to 15% moisture content), chamber temperature uniformity, and fuel efficiency.',
+    keyFindings:
+      'Reduced seaweed drying time from 48 hours to 14.5 hours under intermittent cloud cover while preventing sand and mold contamination, increasing Grade-A dried seaweed yield by 29.4%.',
+    attachmentName: 'TUKLAS_InnovationExpo_SolarBiomass_Dehydrator_2026.pdf',
+    attachmentType: 'application/pdf',
+    attachmentSize: 2450000,
+    fileDocId: '',
+    driveUrl: 'https://drive.google.com/drive/folders/1bnhs-tuklas-innovation-expo',
+    evaluationScore: 98,
+    evaluationRemarks:
+      'Outstanding TUKLAS Innovation Expo entry with immediate community livelihood adoption potential for Barobo coastal barangays.',
+    evaluatedBy: 'TUKLAS Scientific & Innovation Review Panel',
+    authorUid: 'baseline_teacher_03',
+    createdAtIso: '2026-10-22T10:30:00.000Z',
+    updatedAtIso: '2026-10-25T14:15:00.000Z',
+    isBaseline: true,
+  },
 ];
 
 export const INITIAL_BNHS_RESEARCHERS: ResearcherProfileRecord[] = [
@@ -1100,9 +1170,9 @@ export const INITIAL_OVERVIEW_ITEMS: OverviewItemRecord[] = [
     itemType: 'card',
     code: 'DIV-03',
     title: 'TUKLAS: A Research Project Fair',
-    subtitle: 'Four Major Categories & Subcategories',
+    subtitle: 'Five Major Categories & Innovation Expo',
     description:
-      'Student and mentored STEM innovation projects competing across Life Science, Physical Science, Robotics & Intelligent Machines, and Mathematics & Computational Sciences.',
+      'Student and mentored STEM innovation projects competing across Life Science, Physical Science, Robotics & Intelligent Machines, Mathematics & Computational Sciences, and the Innovation Expo.',
     imageUrl: PORTAL_IMAGES.tuklasFair,
     divisionLink: 'tuklas',
     displayOrder: 3,

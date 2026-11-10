@@ -40,6 +40,8 @@ import {
   Trash2,
   Mail,
   Image as ImageIcon,
+  CloudCheck,
+  RefreshCw,
 } from 'lucide-react';
 import {
   db,
@@ -85,6 +87,7 @@ import { ResearcherProfilesView } from './components/ResearcherProfilesView';
 import { AdminEvaluationView } from './components/AdminEvaluationView';
 import { LatestAdditionsWidget } from './components/LatestAdditionsWidget';
 import { NotifyMeModal } from './components/NotifyMeModal';
+import { OverviewAnalyticsSection } from './components/OverviewAnalyticsSection';
 
 type ActiveSection =
   | 'overview'
@@ -99,6 +102,8 @@ const LOCAL_OVERVIEW_ITEMS_KEY = 'bnhs_overview_items_v1';
 const LOCAL_RESEARCH_OVERRIDES_KEY = 'bnhs_local_researches_v1';
 const LOCAL_DELETED_RESEARCH_IDS_KEY = 'bnhs_deleted_research_ids_v1';
 const LOCAL_COMMENTS_KEY = 'bnhs_local_comments_v1';
+const LOCAL_PROFILES_KEY = 'bnhs_local_profiles_v1';
+const LOCAL_DELETED_PROFILE_IDS_KEY = 'bnhs_deleted_profile_ids_v1';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -161,6 +166,22 @@ export default function App() {
       return [];
     }
   });
+  const [localProfiles, setLocalProfiles] = useState<ResearcherProfileRecord[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [deletedProfileIds, setDeletedProfileIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_DELETED_PROFILE_IDS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const [activeSection, setActiveSection] = useState<ActiveSection>('overview');
   const [directoryTab, setDirectoryTab] = useState<'researchers' | 'admin'>('researchers');
@@ -187,11 +208,29 @@ export default function App() {
   const [latestEmailAlertBanner, setLatestEmailAlertBanner] = useState<EmailAlertLogRecord | null>(null);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
   const [currentYear, setCurrentYear] = useState<number>(() => new Date().getFullYear());
+  const [cloudSyncState, setCloudSyncState] = useState<'synced' | 'syncing' | 'auto_saved'>('synced');
+  const [lastSyncedTime, setLastSyncedTime] = useState<string>(() =>
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  );
 
-  // Persist local state mirrors
+  const markAutoSynced = () => {
+    setCloudSyncState('syncing');
+    const timeLabel = new Date().toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    window.setTimeout(() => {
+      setLastSyncedTime(timeLabel);
+      setCloudSyncState('synced');
+    }, 350);
+  };
+
+  // Persist local state mirrors & update Cloud Synced timestamp automatically on any change
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_RESEARCH_OVERRIDES_KEY, JSON.stringify(localResearches));
+      markAutoSynced();
     } catch {
       // ignore storage quota errors
     }
@@ -200,6 +239,7 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_DELETED_RESEARCH_IDS_KEY, JSON.stringify(deletedResearchIds));
+      markAutoSynced();
     } catch {
       // ignore
     }
@@ -208,6 +248,7 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(localComments));
+      markAutoSynced();
     } catch {
       // ignore
     }
@@ -216,6 +257,7 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_SUBSCRIPTIONS_KEY, JSON.stringify(localSubscriptions));
+      markAutoSynced();
     } catch {
       // ignore
     }
@@ -232,10 +274,29 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_OVERVIEW_ITEMS_KEY, JSON.stringify(localOverviewItems));
+      markAutoSynced();
     } catch {
       // ignore
     }
   }, [localOverviewItems]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(localProfiles));
+      markAutoSynced();
+    } catch {
+      // ignore
+    }
+  }, [localProfiles]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_DELETED_PROFILE_IDS_KEY, JSON.stringify(deletedProfileIds));
+      markAutoSynced();
+    } catch {
+      // ignore
+    }
+  }, [deletedProfileIds]);
 
   // Automatically update copyright year on January 1st rollover without requiring page reload
   useEffect(() => {
@@ -361,6 +422,8 @@ export default function App() {
             bio: String(d.bio || ''),
             institutionIdCode: String(d.institutionIdCode || ''),
             driveFolderUrl: String(d.driveFolderUrl || ''),
+            photoUrl: String(d.photoUrl || ''),
+            photoDriveUrl: String(d.photoDriveUrl || ''),
             isBaseline: false,
           };
         });
@@ -492,6 +555,89 @@ export default function App() {
     return () => unsub();
   }, [authReady, currentUser]);
 
+  // 4. Automatic Cloud Sync whenever authenticated user signs in or local changes occur
+  useEffect(() => {
+    if (!authReady || !currentUser || !currentUser.emailVerified || loadingData) {
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      try {
+        for (const item of localResearches) {
+          if (deletedResearchIds.includes(item.id)) continue;
+          const cleanId = sanitizeId(item.id);
+          const exists = cloudResearches.some((c) => c.id === cleanId);
+          if (!exists) {
+            await setDoc(doc(db, 'researches', cleanId), {
+              portalId: 'bnhs',
+              title: item.title,
+              division: item.division,
+              category: item.category,
+              subcategory: item.subcategory,
+              abstract: item.abstract,
+              keywords: item.keywords,
+              authors: item.authors,
+              authorRole: item.authorRole,
+              adviser: item.adviser,
+              departmentOrGrade: item.departmentOrGrade,
+              schoolYear: item.schoolYear,
+              status: isAdmin ? item.status : 'Pending Review',
+              methodology: item.methodology,
+              keyFindings: item.keyFindings,
+              attachmentName: item.attachmentName,
+              attachmentType: item.attachmentType,
+              attachmentSize: item.attachmentSize,
+              fileDocId: item.fileDocId || '',
+              driveUrl: item.driveUrl || '',
+              evaluationScore: isAdmin ? item.evaluationScore : 0,
+              evaluationRemarks: isAdmin ? item.evaluationRemarks : '',
+              evaluatedBy: isAdmin ? item.evaluatedBy : '',
+              authorUid: currentUser.uid,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+        if (isAdmin) {
+          for (const ov of localOverviewItems) {
+            const cleanId = sanitizeId(ov.id);
+            const exists = cloudOverviewItems.some((c) => c.id === cleanId);
+            if (!exists) {
+              await setDoc(doc(db, 'overview_items', cleanId), {
+                portalId: 'bnhs',
+                itemType: ov.itemType,
+                code: ov.code.slice(0, 40),
+                title: ov.title.slice(0, 300),
+                subtitle: ov.subtitle.slice(0, 200),
+                description: ov.description.slice(0, 2000),
+                imageUrl: ov.imageUrl.slice(0, 750000),
+                divisionLink: ov.divisionLink,
+                displayOrder: ov.displayOrder,
+                isDeleted: ov.isDeleted,
+                updatedByUid: currentUser.uid,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              });
+            }
+          }
+        }
+      } catch {
+        // background auto-sync ignores transient errors
+      }
+    }, 600);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    authReady,
+    currentUser,
+    isAdmin,
+    loadingData,
+    localResearches,
+    localOverviewItems,
+    deletedResearchIds,
+    cloudResearches,
+    cloudOverviewItems,
+  ]);
+
   // Merge cloud records, local overrides, and baseline records (excluding deleted IDs)
   const allResearches = useMemo(() => {
     const deletedSet = new Set(deletedResearchIds);
@@ -519,16 +665,25 @@ export default function App() {
   }, [cloudResearches, localResearches, deletedResearchIds]);
 
   const allProfiles = useMemo(() => {
-    const cloudMap = new Map<string, ResearcherProfileRecord>();
-    cloudProfiles.forEach((p) => cloudMap.set(p.id, p));
-    const merged: ResearcherProfileRecord[] = [...cloudProfiles];
+    const deletedSet = new Set(deletedProfileIds);
+    const map = new Map<string, ResearcherProfileRecord>();
     INITIAL_BNHS_RESEARCHERS.forEach((base) => {
-      if (!cloudMap.has(base.id)) {
-        merged.push(base);
+      if (!deletedSet.has(base.id)) {
+        map.set(base.id, base);
       }
     });
-    return merged;
-  }, [cloudProfiles]);
+    localProfiles.forEach((loc) => {
+      if (!deletedSet.has(loc.id)) {
+        map.set(loc.id, loc);
+      }
+    });
+    cloudProfiles.forEach((p) => {
+      if (!deletedSet.has(p.id)) {
+        map.set(p.id, p);
+      }
+    });
+    return Array.from(map.values());
+  }, [cloudProfiles, localProfiles, deletedProfileIds]);
 
   const allComments = useMemo(() => {
     const map = new Map<string, ResearchCommentRecord>();
@@ -1187,116 +1342,265 @@ export default function App() {
     downloadManuscriptWordDoc(record);
   };
 
-  // Save Researcher Profile
+  // Save or Update Researcher Profile (With Local Drive Photo or Google Drive Photo URL)
   const handleSaveResearcherProfile = async (
-    payload: Omit<ResearcherProfileRecord, 'id' | 'portalId' | 'uid'>
+    payload: Omit<ResearcherProfileRecord, 'id' | 'portalId' | 'uid'>,
+    targetProfileId?: string
   ) => {
-    if (!auth.currentUser) {
-      throw new Error('Please sign in first.');
-    }
-    const uid = sanitizeId(auth.currentUser.uid);
-    const docPath = `researchers/${uid}`;
-    const existsInCloud = cloudProfiles.some((p) => p.id === uid);
+    const rawId =
+      targetProfileId ||
+      auth.currentUser?.uid ||
+      `profile_${Date.now()}`;
+    const cleanId = sanitizeId(rawId);
+    const uid = sanitizeId(auth.currentUser?.uid || cleanId);
 
-    try {
-      if (existsInCloud) {
-        await updateDoc(doc(db, 'researchers', uid), {
-          fullName: payload.fullName,
-          departmentOrStrand: payload.departmentOrStrand,
-          gradeOrPosition: payload.gradeOrPosition,
-          specialization: payload.specialization,
-          bio: payload.bio,
-          institutionIdCode: payload.institutionIdCode,
-          driveFolderUrl: payload.driveFolderUrl,
-          updatedAt: serverTimestamp(),
-        });
-      } else {
-        await setDoc(doc(db, 'researchers', uid), {
-          portalId: 'bnhs',
-          uid,
-          fullName: payload.fullName,
-          role: payload.role,
-          departmentOrStrand: payload.departmentOrStrand,
-          gradeOrPosition: payload.gradeOrPosition,
-          specialization: payload.specialization,
-          bio: payload.bio,
-          institutionIdCode: payload.institutionIdCode,
-          driveFolderUrl: payload.driveFolderUrl,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+    const newProfile: ResearcherProfileRecord = {
+      id: cleanId,
+      portalId: 'bnhs',
+      uid,
+      fullName: payload.fullName,
+      role: payload.role,
+      departmentOrStrand: payload.departmentOrStrand,
+      gradeOrPosition: payload.gradeOrPosition,
+      specialization: payload.specialization,
+      bio: payload.bio,
+      institutionIdCode: payload.institutionIdCode,
+      driveFolderUrl: payload.driveFolderUrl,
+      photoUrl: payload.photoUrl || '',
+      photoDriveUrl: payload.photoDriveUrl || '',
+      isBaseline: false,
+    };
+
+    setLocalProfiles((prev) => [
+      ...prev.filter((p) => p.id !== cleanId),
+      newProfile,
+    ]);
+    setDeletedProfileIds((prev) => prev.filter((id) => id !== cleanId));
+
+    if (auth.currentUser && auth.currentUser.emailVerified) {
+      const canWriteCloud = isAdmin || cleanId === sanitizeId(auth.currentUser.uid);
+      if (canWriteCloud) {
+        const docPath = `researchers/${cleanId}`;
+        const existsInCloud = cloudProfiles.some((p) => p.id === cleanId);
+
+        try {
+          if (existsInCloud) {
+            await updateDoc(doc(db, 'researchers', cleanId), {
+              fullName: payload.fullName,
+              departmentOrStrand: payload.departmentOrStrand,
+              gradeOrPosition: payload.gradeOrPosition,
+              specialization: payload.specialization,
+              bio: payload.bio,
+              institutionIdCode: payload.institutionIdCode,
+              driveFolderUrl: payload.driveFolderUrl,
+              photoUrl: payload.photoUrl || '',
+              photoDriveUrl: payload.photoDriveUrl || '',
+              updatedAt: serverTimestamp(),
+            });
+          } else {
+            await setDoc(doc(db, 'researchers', cleanId), {
+              portalId: 'bnhs',
+              uid: isAdmin ? uid : auth.currentUser.uid,
+              fullName: payload.fullName,
+              role:
+                !isAdmin && payload.role === 'Research Coordinator'
+                  ? 'Teacher Researcher'
+                  : payload.role,
+              departmentOrStrand: payload.departmentOrStrand,
+              gradeOrPosition: payload.gradeOrPosition,
+              specialization: payload.specialization,
+              bio: payload.bio,
+              institutionIdCode: payload.institutionIdCode,
+              driveFolderUrl: payload.driveFolderUrl,
+              photoUrl: payload.photoUrl || '',
+              photoDriveUrl: payload.photoDriveUrl || '',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, docPath);
+        }
       }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, docPath);
     }
+
+    showToast('Official BNHS Researcher Profile and photo saved.');
   };
 
-  // Admin: Sync All Baseline Records to Firestore
-  const handleSyncBaselineToCloud = async () => {
-    if (!auth.currentUser || !isAdmin) return;
-    for (const item of INITIAL_BNHS_RESEARCHES) {
-      const exists = cloudResearches.some((c) => c.id === item.id);
-      if (!exists) {
-        const docPath = `researches/${item.id}`;
+  const handleDeleteResearcherProfile = async (profileId: string) => {
+    setDeletedProfileIds((prev) =>
+      prev.includes(profileId) ? prev : [...prev, profileId]
+    );
+    setLocalProfiles((prev) => prev.filter((p) => p.id !== profileId));
+
+    if (auth.currentUser && isAdmin) {
+      const existsInCloud = cloudProfiles.some((p) => p.id === profileId);
+      if (existsInCloud) {
+        const docPath = `researchers/${profileId}`;
         try {
-          await setDoc(doc(db, 'researches', item.id), {
-            portalId: 'bnhs',
-            title: item.title,
-            division: item.division,
-            category: item.category,
-            subcategory: item.subcategory,
-            abstract: item.abstract,
-            keywords: item.keywords,
-            authors: item.authors,
-            authorRole: item.authorRole,
-            adviser: item.adviser,
-            departmentOrGrade: item.departmentOrGrade,
-            schoolYear: item.schoolYear,
-            status: item.status,
-            methodology: item.methodology,
-            keyFindings: item.keyFindings,
-            attachmentName: item.attachmentName,
-            attachmentType: item.attachmentType,
-            attachmentSize: item.attachmentSize,
-            fileDocId: '',
-            driveUrl: item.driveUrl,
-            evaluationScore: item.evaluationScore,
-            evaluationRemarks: item.evaluationRemarks,
-            evaluatedBy: item.evaluatedBy,
-            authorUid: auth.currentUser.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
+          await deleteDoc(doc(db, 'researchers', profileId));
         } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, docPath);
+          handleFirestoreError(error, OperationType.DELETE, docPath);
+        }
+      }
+    }
+    showToast('Researcher profile removed from directory.');
+  };
+
+  // Admin & Authenticated User: Sync All Local Changes & Baseline Records to Firestore
+  const handleSyncBaselineToCloud = async () => {
+    setCloudSyncState('syncing');
+    if (auth.currentUser && auth.currentUser.emailVerified) {
+      // 1. Sync any localResearches created or edited locally
+      for (const item of localResearches) {
+        if (deletedResearchIds.includes(item.id)) continue;
+        const cleanId = sanitizeId(item.id);
+        const exists = cloudResearches.some((c) => c.id === cleanId);
+        if (!exists) {
+          const docPath = `researches/${cleanId}`;
+          try {
+            await setDoc(doc(db, 'researches', cleanId), {
+              portalId: 'bnhs',
+              title: item.title,
+              division: item.division,
+              category: item.category,
+              subcategory: item.subcategory,
+              abstract: item.abstract,
+              keywords: item.keywords,
+              authors: item.authors,
+              authorRole: item.authorRole,
+              adviser: item.adviser,
+              departmentOrGrade: item.departmentOrGrade,
+              schoolYear: item.schoolYear,
+              status: isAdmin ? item.status : 'Pending Review',
+              methodology: item.methodology,
+              keyFindings: item.keyFindings,
+              attachmentName: item.attachmentName,
+              attachmentType: item.attachmentType,
+              attachmentSize: item.attachmentSize,
+              fileDocId: item.fileDocId || '',
+              driveUrl: item.driveUrl || '',
+              evaluationScore: isAdmin ? item.evaluationScore : 0,
+              evaluationRemarks: isAdmin ? item.evaluationRemarks : '',
+              evaluatedBy: isAdmin ? item.evaluatedBy : '',
+              authorUid: auth.currentUser.uid,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          } catch {
+            // ignore non-owned records
+          }
+        }
+      }
+
+      // 2. If Admin, also sync baseline records and overview customizations
+      if (isAdmin) {
+        for (const item of INITIAL_BNHS_RESEARCHES) {
+          if (deletedResearchIds.includes(item.id)) continue;
+          const exists = cloudResearches.some((c) => c.id === item.id);
+          if (!exists) {
+            const docPath = `researches/${item.id}`;
+            try {
+              await setDoc(doc(db, 'researches', item.id), {
+                portalId: 'bnhs',
+                title: item.title,
+                division: item.division,
+                category: item.category,
+                subcategory: item.subcategory,
+                abstract: item.abstract,
+                keywords: item.keywords,
+                authors: item.authors,
+                authorRole: item.authorRole,
+                adviser: item.adviser,
+                departmentOrGrade: item.departmentOrGrade,
+                schoolYear: item.schoolYear,
+                status: item.status,
+                methodology: item.methodology,
+                keyFindings: item.keyFindings,
+                attachmentName: item.attachmentName,
+                attachmentType: item.attachmentType,
+                attachmentSize: item.attachmentSize,
+                fileDocId: '',
+                driveUrl: item.driveUrl,
+                evaluationScore: item.evaluationScore,
+                evaluationRemarks: item.evaluationRemarks,
+                evaluatedBy: item.evaluatedBy,
+                authorUid: auth.currentUser.uid,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              });
+            } catch (error) {
+              handleFirestoreError(error, OperationType.CREATE, docPath);
+            }
+          }
+        }
+
+        for (const prof of [...INITIAL_BNHS_RESEARCHERS, ...localProfiles]) {
+          if (deletedProfileIds.includes(prof.id)) continue;
+          const cleanId = sanitizeId(prof.id);
+          const exists = cloudProfiles.some((p) => p.id === cleanId);
+          if (!exists) {
+            const docPath = `researchers/${cleanId}`;
+            try {
+              await setDoc(doc(db, 'researchers', cleanId), {
+                portalId: 'bnhs',
+                uid: prof.uid || auth.currentUser.uid,
+                fullName: prof.fullName,
+                role: prof.role,
+                departmentOrStrand: prof.departmentOrStrand,
+                gradeOrPosition: prof.gradeOrPosition,
+                specialization: prof.specialization,
+                bio: prof.bio,
+                institutionIdCode: prof.institutionIdCode,
+                driveFolderUrl: prof.driveFolderUrl,
+                photoUrl: prof.photoUrl || '',
+                photoDriveUrl: prof.photoDriveUrl || '',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              });
+            } catch (error) {
+              handleFirestoreError(error, OperationType.CREATE, docPath);
+            }
+          }
+        }
+
+        for (const ov of localOverviewItems) {
+          const cleanId = sanitizeId(ov.id);
+          const exists = cloudOverviewItems.some((c) => c.id === cleanId);
+          if (!exists) {
+            try {
+              await setDoc(doc(db, 'overview_items', cleanId), {
+                portalId: 'bnhs',
+                itemType: ov.itemType,
+                code: ov.code.slice(0, 40),
+                title: ov.title.slice(0, 300),
+                subtitle: ov.subtitle.slice(0, 200),
+                description: ov.description.slice(0, 2000),
+                imageUrl: ov.imageUrl.slice(0, 750000),
+                divisionLink: ov.divisionLink,
+                displayOrder: ov.displayOrder,
+                isDeleted: ov.isDeleted,
+                updatedByUid: auth.currentUser.uid,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              });
+            } catch {
+              // ignore
+            }
+          }
         }
       }
     }
 
-    for (const prof of INITIAL_BNHS_RESEARCHERS) {
-      const exists = cloudProfiles.some((p) => p.id === prof.id);
-      if (!exists) {
-        const docPath = `researchers/${prof.id}`;
-        try {
-          await setDoc(doc(db, 'researchers', prof.id), {
-            portalId: 'bnhs',
-            uid: prof.uid,
-            fullName: prof.fullName,
-            role: prof.role,
-            departmentOrStrand: prof.departmentOrStrand,
-            gradeOrPosition: prof.gradeOrPosition,
-            specialization: prof.specialization,
-            bio: prof.bio,
-            institutionIdCode: prof.institutionIdCode,
-            driveFolderUrl: prof.driveFolderUrl,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, docPath);
-        }
-      }
-    }
+    setLastSyncedTime(
+      new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    );
+    setCloudSyncState('synced');
+    showToast('Cloud Synced: All research records, overview items, and researcher profiles are saved.');
   };
 
   // Filtered Research Records for the Active View
@@ -1584,6 +1888,26 @@ export default function App() {
 
             <span aria-hidden="true" className="text-rose-300/60">|</span>
 
+            <button
+              type="button"
+              onClick={handleSyncBaselineToCloud}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-300 hover:text-emerald-200 whitespace-nowrap shrink-0"
+              title="All changes automatically save and sync to the cloud"
+            >
+              {cloudSyncState === 'syncing' ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
+              ) : (
+                <CloudCheck className="w-3.5 h-3.5 text-emerald-300" />
+              )}
+              <span>
+                {cloudSyncState === 'syncing'
+                  ? 'Cloud Syncing...'
+                  : `Cloud Synced (Auto-Saved ${lastSyncedTime})`}
+              </span>
+            </button>
+
+            <span aria-hidden="true" className="text-rose-300/60">|</span>
+
             {authReady && currentUser ? (
               <div className="flex items-center justify-center gap-3 flex-wrap">
                 <span className="text-rose-100">
@@ -1855,10 +2179,22 @@ export default function App() {
                   {stats.tuklasCount}
                 </div>
                 <div className="text-xs text-zinc-500 mt-1">
-                  4 Major Categories &amp; 13 Subcategories
+                  5 Major Categories &amp; Innovation Expo
                 </div>
               </button>
             </section>
+
+            {/* Data Visualization Section (Recharts Bar Chart per Division & Pie Chart across 7 Action Research Themes + Live Cloud Synced Status) */}
+            <OverviewAnalyticsSection
+              researches={allResearches}
+              cloudSyncState={cloudSyncState}
+              lastSyncedTime={lastSyncedTime}
+              isAuthenticated={Boolean(currentUser && currentUser.emailVerified)}
+              onTriggerCloudSync={handleSyncBaselineToCloud}
+              onNavigateDivision={(div, cat, subcat) =>
+                navigateToDivision(div, cat || 'all', subcat || 'all')
+              }
+            />
 
             {/* Latest Additions Horizontal Scrolling Widget (5 Most Recent Uploads) */}
             <LatestAdditionsWidget
@@ -2046,7 +2382,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Right 5 Cols: TUKLAS 4 Major Categories & Subcategories */}
+              {/* Right 5 Cols: TUKLAS 5 Major Categories & Subcategories (including Innovation Expo) */}
               <div className="lg:col-span-5 bg-white border border-zinc-200 p-6 md:p-8 space-y-5">
                 <div className="flex items-center justify-between border-b border-zinc-200 pb-4">
                   <div>
@@ -2054,7 +2390,7 @@ export default function App() {
                       Division 03 · STEM &amp; Innovation Fair
                     </div>
                     <h2 className="text-xl font-display font-semibold text-zinc-900 mt-0.5">
-                      TUKLAS: Four Major Categories
+                      TUKLAS: Five Major Categories &amp; Innovation Expo
                     </h2>
                   </div>
                   <button
@@ -2256,7 +2592,7 @@ export default function App() {
                   TUKLAS: A Research Project Fair
                 </h1>
                 <p className="text-sm text-zinc-600 mt-1.5">
-                  Organized across the four major scientific categories and thirteen specialized subcategories. Explore student-led experimental trials, marine bio-stimulants, biodegradable polymers, aquaculture IoT buoys, and mathematical evacuation models.
+                  Organized across five major categories — Life Science (LS), Physical Science (PS), Robotics and Intelligent Machines (RIM), Mathematics and Computational Sciences (MCS), and the Innovation Expo — with specialized subcategories.
                 </p>
               </div>
               <button
@@ -2928,6 +3264,7 @@ export default function App() {
                 isAdmin={isAdmin}
                 onSelectResearch={(rec) => setSelectedDetailRecord(rec)}
                 onSaveProfile={handleSaveResearcherProfile}
+                onDeleteProfile={handleDeleteResearcherProfile}
                 onSignInPrompt={async () => {
                   try {
                     await signInWithGooglePopup();

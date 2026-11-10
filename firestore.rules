@@ -107,25 +107,36 @@ service cloud.firestore {
       return data.keys().hasAll([
           'portalId', 'uid', 'fullName', 'role', 'departmentOrStrand',
           'gradeOrPosition', 'specialization', 'bio', 'institutionIdCode',
-          'driveFolderUrl', 'createdAt', 'updatedAt'
+          'driveFolderUrl', 'photoUrl', 'photoDriveUrl', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
           'portalId', 'uid', 'fullName', 'role', 'departmentOrStrand',
           'gradeOrPosition', 'specialization', 'bio', 'institutionIdCode',
-          'driveFolderUrl', 'createdAt', 'updatedAt'
+          'driveFolderUrl', 'photoUrl', 'photoDriveUrl', 'createdAt', 'updatedAt'
         ]) &&
         data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
         data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
         data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
         data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 160 &&
-        data.role is string && data.role.size() <= 40 &&
-        (data.role == 'Student Researcher' || data.role == 'Teacher Researcher' || data.role == 'Master Teacher / Adviser' || data.role == 'Research Coordinator') &&
+        data.role is string && data.role.size() <= 50 &&
+        (
+          data.role == 'Student Researcher' ||
+          data.role == 'Teacher Researcher' ||
+          data.role == 'Master Teacher Researcher' ||
+          data.role == 'Teacher/Adviser' ||
+          data.role == 'Master Teacher / Adviser' ||
+          data.role == 'School Research Grammarian' ||
+          data.role == 'School Research Statistician' ||
+          data.role == 'Research Coordinator'
+        ) &&
         data.departmentOrStrand is string && data.departmentOrStrand.size() >= 2 && data.departmentOrStrand.size() <= 120 &&
         data.gradeOrPosition is string && data.gradeOrPosition.size() >= 1 && data.gradeOrPosition.size() <= 100 &&
         data.specialization is string && data.specialization.size() <= 250 &&
         data.bio is string && data.bio.size() <= 1000 &&
         data.institutionIdCode is string && data.institutionIdCode.size() <= 60 &&
         data.driveFolderUrl is string && data.driveFolderUrl.size() <= 500 &&
+        data.photoUrl is string && data.photoUrl.size() <= 750000 &&
+        data.photoDriveUrl is string && data.photoDriveUrl.size() <= 500 &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -304,7 +315,8 @@ service cloud.firestore {
             incoming().role == existing().role &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'fullName', 'departmentOrStrand', 'gradeOrPosition',
-              'specialization', 'bio', 'institutionIdCode', 'driveFolderUrl', 'updatedAt'
+              'specialization', 'bio', 'institutionIdCode', 'driveFolderUrl',
+              'photoUrl', 'photoDriveUrl', 'updatedAt'
             ])
           ) ||
           isAdmin()
