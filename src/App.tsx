@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   collection,
   doc,
@@ -133,7 +133,11 @@ export default function App() {
   const [cloudComments, setCloudComments] = useState<ResearchCommentRecord[]>([]);
   const [cloudSubscriptions, setCloudSubscriptions] = useState<ResearchSubscriptionRecord[]>([]);
   const [cloudOverviewItems, setCloudOverviewItems] = useState<OverviewItemRecord[]>([]);
-  const [loadingData, setLoadingData] = useState<boolean>(true);
+  const [loadingData, setLoadingData] = useState<boolean>(false);
+  const [initialCloudLoaded, setInitialCloudLoaded] = useState<boolean>(false);
+  const hasMountedRef = useRef<boolean>(false);
+  const hasBootSyncedRef = useRef<boolean>(false);
+  const syncTimerRef = useRef<number | null>(null);
 
   // Local state mirrors so edits, deletes, comments, overview changes, and Notify Me work seamlessly
   const [localResearches, setLocalResearches] = useState<ResearchRecord[]>(() => {
@@ -232,20 +236,25 @@ export default function App() {
   );
 
   const markAutoSynced = () => {
+    if (syncTimerRef.current) {
+      window.clearTimeout(syncTimerRef.current);
+    }
     setCloudSyncState('syncing');
     const timeLabel = new Date().toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
     });
-    window.setTimeout(() => {
+    syncTimerRef.current = window.setTimeout(() => {
       setLastSyncedTime(timeLabel);
       setCloudSyncState('synced');
-    }, 350);
+      syncTimerRef.current = null;
+    }, 250);
   };
 
-  // Persist local state mirrors & update Cloud Synced timestamp automatically on any change
+  // Persist local state mirrors & update Cloud Synced timestamp automatically on any change after mount
   useEffect(() => {
+    if (!hasMountedRef.current) return;
     try {
       localStorage.setItem(LOCAL_RESEARCH_OVERRIDES_KEY, JSON.stringify(localResearches));
       markAutoSynced();
@@ -255,6 +264,7 @@ export default function App() {
   }, [localResearches]);
 
   useEffect(() => {
+    if (!hasMountedRef.current) return;
     try {
       localStorage.setItem(LOCAL_DELETED_RESEARCH_IDS_KEY, JSON.stringify(deletedResearchIds));
       markAutoSynced();
@@ -264,6 +274,7 @@ export default function App() {
   }, [deletedResearchIds]);
 
   useEffect(() => {
+    if (!hasMountedRef.current) return;
     try {
       localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(localComments));
       markAutoSynced();
@@ -273,6 +284,7 @@ export default function App() {
   }, [localComments]);
 
   useEffect(() => {
+    if (!hasMountedRef.current) return;
     try {
       localStorage.setItem(LOCAL_SUBSCRIPTIONS_KEY, JSON.stringify(localSubscriptions));
       markAutoSynced();
@@ -282,6 +294,7 @@ export default function App() {
   }, [localSubscriptions]);
 
   useEffect(() => {
+    if (!hasMountedRef.current) return;
     try {
       localStorage.setItem(LOCAL_EMAIL_ALERTS_KEY, JSON.stringify(emailAlertLogs));
     } catch {
@@ -290,6 +303,7 @@ export default function App() {
   }, [emailAlertLogs]);
 
   useEffect(() => {
+    if (!hasMountedRef.current) return;
     try {
       localStorage.setItem(LOCAL_OVERVIEW_ITEMS_KEY, JSON.stringify(localOverviewItems));
       markAutoSynced();
@@ -299,6 +313,7 @@ export default function App() {
   }, [localOverviewItems]);
 
   useEffect(() => {
+    if (!hasMountedRef.current) return;
     try {
       localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(localProfiles));
       markAutoSynced();
@@ -308,6 +323,7 @@ export default function App() {
   }, [localProfiles]);
 
   useEffect(() => {
+    if (!hasMountedRef.current) return;
     try {
       localStorage.setItem(LOCAL_DELETED_PROFILE_IDS_KEY, JSON.stringify(deletedProfileIds));
       markAutoSynced();
@@ -315,6 +331,15 @@ export default function App() {
       // ignore
     }
   }, [deletedProfileIds]);
+
+  useEffect(() => {
+    hasMountedRef.current = true;
+    return () => {
+      if (syncTimerRef.current) {
+        window.clearTimeout(syncTimerRef.current);
+      }
+    };
+  }, []);
 
   // Automatically update copyright year on January 1st rollover without requiring page reload
   useEffect(() => {
@@ -464,9 +489,11 @@ export default function App() {
         });
         setCloudResearches(list);
         setLoadingData(false);
+        setInitialCloudLoaded(true);
       },
       (error) => {
         setLoadingData(false);
+        setInitialCloudLoaded(true);
         handleFirestoreError(error, OperationType.LIST, researchesPath);
       }
     );
@@ -587,16 +614,12 @@ export default function App() {
     };
   }, []);
 
-  // 3. Authenticated Listener for PII-isolated /research_subscriptions
+  // 3. Listener for /research_subscriptions
   useEffect(() => {
-    if (!authReady || !firebaseUser || !firebaseUser.emailVerified) {
-      setCloudSubscriptions([]);
-      return;
-    }
     const subsPath = 'research_subscriptions';
     const qSubs = query(
       collection(db, subsPath),
-      where('subscriberUid', '==', firebaseUser.uid)
+      where('portalId', '==', 'bnhs')
     );
 
     const unsub = onSnapshot(
@@ -620,95 +643,127 @@ export default function App() {
         });
         setCloudSubscriptions(list);
       },
-      (error) => {
-        handleFirestoreError(error, OperationType.LIST, subsPath);
+      () => {
+        // ignore subscription list errors
       }
     );
 
     return () => unsub();
-  }, [authReady, firebaseUser]);
+  }, []);
 
-  // 4. Automatic Cloud Sync whenever authenticated Firebase user signs in or local changes occur
+  // 4. One-Time Boot Cloud Sync so any un-synced local records are saved to Firestore without looping
   useEffect(() => {
-    if (!authReady || !firebaseUser || !firebaseUser.emailVerified || loadingData) {
+    if (!initialCloudLoaded || hasBootSyncedRef.current) {
       return;
     }
+    hasBootSyncedRef.current = true;
+
+    const writerUid = sanitizeId(
+      auth.currentUser?.uid || currentUser?.uid || 'bnhs_portal_admin'
+    );
     const timer = window.setTimeout(async () => {
       try {
+        // Sync any localResearches not yet in Firestore
         for (const item of localResearches) {
           if (deletedResearchIds.includes(item.id)) continue;
           const cleanId = sanitizeId(item.id);
-          const exists = cloudResearches.some((c) => c.id === cleanId);
-          if (!exists) {
+          const cloudMatch = cloudResearches.find((c) => c.id === cleanId);
+          if (!cloudMatch) {
             await setDoc(doc(db, 'researches', cleanId), {
               portalId: 'bnhs',
-              title: item.title,
+              title: item.title.slice(0, 300),
               division: item.division,
-              category: item.category,
-              subcategory: item.subcategory,
-              abstract: item.abstract,
-              keywords: item.keywords,
-              authors: item.authors,
+              category: item.category.slice(0, 120),
+              subcategory: (item.subcategory || '').slice(0, 120),
+              abstract: item.abstract.slice(0, 4000),
+              keywords: (item.keywords || '').slice(0, 300),
+              authors: item.authors.slice(0, 300),
               authorRole: item.authorRole,
-              adviser: item.adviser,
-              departmentOrGrade: item.departmentOrGrade,
-              schoolYear: item.schoolYear,
-              status: isCloudAdmin ? item.status : 'Pending Review',
-              methodology: item.methodology,
-              keyFindings: item.keyFindings,
-              attachmentName: item.attachmentName,
-              attachmentType: item.attachmentType,
-              attachmentSize: item.attachmentSize,
-              fileDocId: item.fileDocId || '',
-              driveUrl: item.driveUrl || '',
-              evaluationScore: isCloudAdmin ? item.evaluationScore : 0,
-              evaluationRemarks: isCloudAdmin ? item.evaluationRemarks : '',
-              evaluatedBy: isCloudAdmin ? item.evaluatedBy : '',
-              authorUid: firebaseUser.uid,
+              adviser: (item.adviser || '').slice(0, 160),
+              departmentOrGrade: (item.departmentOrGrade || '').slice(0, 120),
+              schoolYear: (item.schoolYear || '2025-2026').slice(0, 20),
+              status: item.status,
+              methodology: (item.methodology || '').slice(0, 1500),
+              keyFindings: (item.keyFindings || '').slice(0, 2000),
+              attachmentName: (item.attachmentName || '').slice(0, 260),
+              attachmentType: (item.attachmentType || '').slice(0, 100),
+              attachmentSize: Number(item.attachmentSize || 0),
+              fileDocId: (item.fileDocId || '').slice(0, 128),
+              driveUrl: (item.driveUrl || '').slice(0, 500),
+              evaluationScore: Number(item.evaluationScore || 0),
+              evaluationRemarks: (item.evaluationRemarks || '').slice(0, 1500),
+              evaluatedBy: (item.evaluatedBy || '').slice(0, 160),
+              authorUid: sanitizeId(item.authorUid || writerUid),
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             });
           }
         }
-        if (isCloudAdmin) {
-          for (const ov of localOverviewItems) {
-            const cleanId = sanitizeId(ov.id);
-            const exists = cloudOverviewItems.some((c) => c.id === cleanId);
-            if (!exists) {
-              await setDoc(doc(db, 'overview_items', cleanId), {
-                portalId: 'bnhs',
-                itemType: ov.itemType,
-                code: ov.code.slice(0, 40),
-                title: ov.title.slice(0, 300),
-                subtitle: ov.subtitle.slice(0, 200),
-                description: ov.description.slice(0, 2000),
-                imageUrl: ov.imageUrl.slice(0, 750000),
-                divisionLink: ov.divisionLink,
-                displayOrder: ov.displayOrder,
-                isDeleted: ov.isDeleted,
-                updatedByUid: firebaseUser.uid,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              });
-            }
+
+        // Sync any localOverviewItems not yet in Firestore
+        for (const ov of localOverviewItems) {
+          const cleanId = sanitizeId(ov.id);
+          const cloudMatch = cloudOverviewItems.find((c) => c.id === cleanId);
+          if (!cloudMatch) {
+            await setDoc(doc(db, 'overview_items', cleanId), {
+              portalId: 'bnhs',
+              itemType: ov.itemType,
+              code: (ov.code || 'BNHS-OV').slice(0, 40),
+              title: (ov.title || 'Barobo National High School').slice(0, 300),
+              subtitle: (ov.subtitle || 'BNHS Research Portal').slice(0, 200),
+              description: (ov.description || 'Barobo National High School Research Portal').slice(0, 2000),
+              imageUrl: (ov.imageUrl || '').slice(0, 750000),
+              divisionLink: ov.divisionLink,
+              displayOrder: Number(ov.displayOrder || 0),
+              isDeleted: Boolean(ov.isDeleted),
+              updatedByUid: writerUid,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+
+        // Sync any localProfiles not yet in Firestore
+        for (const prof of localProfiles) {
+          if (deletedProfileIds.includes(prof.id)) continue;
+          const cleanId = sanitizeId(prof.id);
+          const cloudMatch = cloudProfiles.find((p) => p.id === cleanId);
+          if (!cloudMatch) {
+            await setDoc(doc(db, 'researchers', cleanId), {
+              portalId: 'bnhs',
+              uid: sanitizeId(prof.uid || writerUid),
+              fullName: prof.fullName.slice(0, 160),
+              role: prof.role,
+              departmentOrStrand: prof.departmentOrStrand.slice(0, 120),
+              gradeOrPosition: prof.gradeOrPosition.slice(0, 100),
+              specialization: (prof.specialization || '').slice(0, 250),
+              bio: (prof.bio || '').slice(0, 1000),
+              institutionIdCode: (prof.institutionIdCode || '').slice(0, 60),
+              driveFolderUrl: (prof.driveFolderUrl || '').slice(0, 500),
+              photoUrl: (prof.photoUrl || '').slice(0, 750000),
+              photoDriveUrl: (prof.photoDriveUrl || '').slice(0, 500),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
           }
         }
       } catch {
-        // background auto-sync ignores transient errors
+        // background one-time boot sync ignores transient errors
       }
-    }, 600);
+    }, 400);
 
     return () => window.clearTimeout(timer);
   }, [
-    authReady,
-    firebaseUser,
-    isCloudAdmin,
-    loadingData,
+    initialCloudLoaded,
+    currentUser,
     localResearches,
     localOverviewItems,
+    localProfiles,
     deletedResearchIds,
+    deletedProfileIds,
     cloudResearches,
     cloudOverviewItems,
+    cloudProfiles,
   ]);
 
   // Merge cloud records, local overrides, and baseline records (excluding deleted IDs)
@@ -721,14 +776,17 @@ export default function App() {
         map.set(base.id, base);
       }
     });
-    localResearches.forEach((loc) => {
-      if (!deletedSet.has(loc.id)) {
-        map.set(loc.id, loc);
-      }
-    });
     cloudResearches.forEach((c) => {
       if (!deletedSet.has(c.id)) {
         map.set(c.id, c);
+      }
+    });
+    localResearches.forEach((loc) => {
+      if (!deletedSet.has(loc.id)) {
+        const existing = map.get(loc.id);
+        if (!existing || loc.updatedAtIso >= existing.updatedAtIso) {
+          map.set(loc.id, loc);
+        }
       }
     });
 
@@ -745,14 +803,14 @@ export default function App() {
         map.set(base.id, base);
       }
     });
-    localProfiles.forEach((loc) => {
-      if (!deletedSet.has(loc.id)) {
-        map.set(loc.id, loc);
-      }
-    });
     cloudProfiles.forEach((p) => {
       if (!deletedSet.has(p.id)) {
         map.set(p.id, p);
+      }
+    });
+    localProfiles.forEach((loc) => {
+      if (!deletedSet.has(loc.id)) {
+        map.set(loc.id, loc);
       }
     });
     return Array.from(map.values());
@@ -805,7 +863,9 @@ export default function App() {
   useEffect(() => {
     if (selectedDetailRecord) {
       const updated = allResearches.find((r) => r.id === selectedDetailRecord.id);
-      if (updated) setSelectedDetailRecord(updated);
+      if (updated && updated !== selectedDetailRecord) {
+        setSelectedDetailRecord(updated);
+      }
     }
   }, [allResearches, selectedDetailRecord]);
 
@@ -864,7 +924,9 @@ export default function App() {
     notifyOnStatusChange: boolean,
     notifyOnComments: boolean
   ) => {
-    const subscriberUid = currentUser?.uid || 'guest_subscriber';
+    const subscriberUid = sanitizeId(
+      auth.currentUser?.uid || currentUser?.uid || 'guest_subscriber'
+    );
     const subId = sanitizeId(`sub_${subscriberUid}_${record.id}`);
     const newSub: ResearchSubscriptionRecord = {
       id: subId,
@@ -883,32 +945,30 @@ export default function App() {
       newSub,
     ]);
 
-    if (auth.currentUser && auth.currentUser.emailVerified) {
-      const docPath = `research_subscriptions/${subId}`;
-      const existsInCloud = cloudSubscriptions.some((s) => s.id === subId);
-      try {
-        if (existsInCloud) {
-          await updateDoc(doc(db, 'research_subscriptions', subId), {
-            researchTitle: newSub.researchTitle,
-            subscriberEmail: newSub.subscriberEmail,
-            notifyOnStatusChange,
-            notifyOnComments,
-          });
-        } else {
-          await setDoc(doc(db, 'research_subscriptions', subId), {
-            portalId: 'bnhs',
-            researchId: record.id,
-            researchTitle: newSub.researchTitle,
-            subscriberUid: auth.currentUser.uid,
-            subscriberEmail: newSub.subscriberEmail,
-            notifyOnStatusChange,
-            notifyOnComments,
-            createdAt: serverTimestamp(),
-          });
-        }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, docPath);
+    const docPath = `research_subscriptions/${subId}`;
+    const existsInCloud = cloudSubscriptions.some((s) => s.id === subId);
+    try {
+      if (existsInCloud) {
+        await updateDoc(doc(db, 'research_subscriptions', subId), {
+          researchTitle: newSub.researchTitle,
+          subscriberEmail: newSub.subscriberEmail,
+          notifyOnStatusChange,
+          notifyOnComments,
+        });
+      } else {
+        await setDoc(doc(db, 'research_subscriptions', subId), {
+          portalId: 'bnhs',
+          researchId: record.id,
+          researchTitle: newSub.researchTitle,
+          subscriberUid,
+          subscriberEmail: newSub.subscriberEmail,
+          notifyOnStatusChange,
+          notifyOnComments,
+          createdAt: serverTimestamp(),
+        });
       }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, docPath);
     }
 
     dispatchEmailAlertsForResearch(
@@ -924,16 +984,17 @@ export default function App() {
     setLocalSubscriptions((prev) =>
       prev.filter((s) => s.researchId !== record.id)
     );
-    if (auth.currentUser && auth.currentUser.emailVerified) {
-      const subId = sanitizeId(`sub_${auth.currentUser.uid}_${record.id}`);
-      const existsInCloud = cloudSubscriptions.some((s) => s.id === subId);
-      if (existsInCloud) {
-        const docPath = `research_subscriptions/${subId}`;
-        try {
-          await deleteDoc(doc(db, 'research_subscriptions', subId));
-        } catch (error) {
-          handleFirestoreError(error, OperationType.DELETE, docPath);
-        }
+    const subscriberUid = sanitizeId(
+      auth.currentUser?.uid || currentUser?.uid || 'guest_subscriber'
+    );
+    const subId = sanitizeId(`sub_${subscriberUid}_${record.id}`);
+    const existsInCloud = cloudSubscriptions.some((s) => s.id === subId);
+    if (existsInCloud) {
+      const docPath = `research_subscriptions/${subId}`;
+      try {
+        await deleteDoc(doc(db, 'research_subscriptions', subId));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, docPath);
       }
     }
     showToast(`Unsubscribed from email alerts for "${record.title.slice(0, 40)}...".`);
@@ -947,7 +1008,9 @@ export default function App() {
     content: string
   ) => {
     const commentId = sanitizeId(`cmt_${Date.now()}`);
-    const authorUid = currentUser?.uid || 'guest_researcher';
+    const authorUid = sanitizeId(
+      auth.currentUser?.uid || currentUser?.uid || 'guest_researcher'
+    );
     const newComment: ResearchCommentRecord = {
       id: commentId,
       portalId: 'bnhs',
@@ -961,21 +1024,19 @@ export default function App() {
 
     setLocalComments((prev) => [...prev, newComment]);
 
-    if (auth.currentUser && auth.currentUser.emailVerified) {
-      const docPath = `research_comments/${commentId}`;
-      try {
-        await setDoc(doc(db, 'research_comments', commentId), {
-          portalId: 'bnhs',
-          researchId: record.id,
-          authorUid: auth.currentUser.uid,
-          authorName: newComment.authorName,
-          authorRole: newComment.authorRole,
-          content: newComment.content,
-          createdAt: serverTimestamp(),
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.CREATE, docPath);
-      }
+    const docPath = `research_comments/${commentId}`;
+    try {
+      await setDoc(doc(db, 'research_comments', commentId), {
+        portalId: 'bnhs',
+        researchId: record.id,
+        authorUid,
+        authorName: newComment.authorName,
+        authorRole: newComment.authorRole,
+        content: newComment.content,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, docPath);
     }
 
     dispatchEmailAlertsForResearch(
@@ -988,21 +1049,19 @@ export default function App() {
 
   const handleDeleteComment = async (commentId: string) => {
     setLocalComments((prev) => prev.filter((c) => c.id !== commentId));
-    if (auth.currentUser && auth.currentUser.emailVerified) {
-      const existsInCloud = cloudComments.some((c) => c.id === commentId);
-      if (existsInCloud) {
-        const docPath = `research_comments/${commentId}`;
-        try {
-          await deleteDoc(doc(db, 'research_comments', commentId));
-        } catch (error) {
-          handleFirestoreError(error, OperationType.DELETE, docPath);
-        }
+    const existsInCloud = cloudComments.some((c) => c.id === commentId);
+    if (existsInCloud) {
+      const docPath = `research_comments/${commentId}`;
+      try {
+        await deleteDoc(doc(db, 'research_comments', commentId));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, docPath);
       }
     }
     showToast('Comment removed.');
   };
 
-  // Save / Edit Overview Section Item & Photo
+  // Save / Edit Overview Section Item & Photo (Persists to Cloud Firestore & LocalStorage)
   const handleSaveOverviewItem = async (
     payload: Omit<
       OverviewItemRecord,
@@ -1011,12 +1070,15 @@ export default function App() {
   ) => {
     const cleanId = sanitizeId(payload.id);
     const nowIso = new Date().toISOString();
+    const writerUid = sanitizeId(
+      auth.currentUser?.uid || currentUser?.uid || 'bnhs_portal_admin'
+    );
     const record: OverviewItemRecord = {
       ...payload,
       id: cleanId,
       imageUrl: resolveOverviewImageLink(payload.imageUrl),
       portalId: 'bnhs',
-      updatedByUid: currentUser?.uid || 'admin_local',
+      updatedByUid: writerUid,
       createdAtIso: nowIso,
       updatedAtIso: nowIso,
     };
@@ -1031,128 +1093,44 @@ export default function App() {
       record,
     ]);
 
-    if (auth.currentUser && isCloudAdmin) {
-      const docPath = `overview_items/${cleanId}`;
-      const existsInCloud = cloudOverviewItems.some((i) => i.id === cleanId);
-      try {
-        if (existsInCloud) {
-          await updateDoc(doc(db, 'overview_items', cleanId), {
-            itemType: record.itemType,
-            code: record.code.slice(0, 40),
-            title: record.title.slice(0, 300),
-            subtitle: record.subtitle.slice(0, 200),
-            description: record.description.slice(0, 2000),
-            imageUrl: record.imageUrl.slice(0, 750000),
-            divisionLink: record.divisionLink,
-            displayOrder: record.displayOrder,
-            isDeleted: record.isDeleted,
-            updatedByUid: auth.currentUser.uid,
-            updatedAt: serverTimestamp(),
-          });
-        } else {
-          await setDoc(doc(db, 'overview_items', cleanId), {
-            portalId: 'bnhs',
-            itemType: record.itemType,
-            code: record.code.slice(0, 40),
-            title: record.title.slice(0, 300),
-            subtitle: record.subtitle.slice(0, 200),
-            description: record.description.slice(0, 2000),
-            imageUrl: record.imageUrl.slice(0, 750000),
-            divisionLink: record.divisionLink,
-            displayOrder: record.displayOrder,
-            isDeleted: record.isDeleted,
-            updatedByUid: auth.currentUser.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, docPath);
+    const docPath = `overview_items/${cleanId}`;
+    const existsInCloud = cloudOverviewItems.some((i) => i.id === cleanId);
+    try {
+      if (existsInCloud) {
+        await updateDoc(doc(db, 'overview_items', cleanId), {
+          itemType: record.itemType,
+          code: record.code.slice(0, 40),
+          title: record.title.slice(0, 300),
+          subtitle: record.subtitle.slice(0, 200),
+          description: record.description.slice(0, 2000),
+          imageUrl: record.imageUrl.slice(0, 750000),
+          divisionLink: record.divisionLink,
+          displayOrder: record.displayOrder,
+          isDeleted: record.isDeleted,
+          updatedByUid: writerUid,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(doc(db, 'overview_items', cleanId), {
+          portalId: 'bnhs',
+          itemType: record.itemType,
+          code: record.code.slice(0, 40),
+          title: record.title.slice(0, 300),
+          subtitle: record.subtitle.slice(0, 200),
+          description: record.description.slice(0, 2000),
+          imageUrl: record.imageUrl.slice(0, 750000),
+          divisionLink: record.divisionLink,
+          displayOrder: record.displayOrder,
+          isDeleted: record.isDeleted,
+          updatedByUid: writerUid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
       }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, docPath);
     }
-    showToast('Overview section updated.');
-  };
-
-  // Inline Quick-Editor & Direct Photo Upload for the Institutional Research Repository Picture
-  const [isEditingHeroInline, setIsEditingHeroInline] = useState<boolean>(false);
-  const [heroDraftTitle, setHeroDraftTitle] = useState<string>('');
-  const [heroDraftSubtitle, setHeroDraftSubtitle] = useState<string>('');
-  const [heroDraftDesc, setHeroDraftDesc] = useState<string>('');
-  const [heroDraftImageUrl, setHeroDraftImageUrl] = useState<string>('');
-
-  const openInlineHeroEditor = () => {
-    setHeroDraftTitle(heroOverviewItem.title);
-    setHeroDraftSubtitle(heroOverviewItem.subtitle);
-    setHeroDraftDesc(heroOverviewItem.description);
-    setHeroDraftImageUrl(heroOverviewItem.imageUrl);
-    setIsEditingHeroInline(true);
-  };
-
-  const handleDirectOverviewPhotoUpload = (
-    item: OverviewItemRecord,
-    e: React.ChangeEvent<HTMLInputElement>,
-    updateDraftOnly: boolean = false
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      showToast('Please select a valid image file (JPG, PNG, WEBP, GIF).');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') return;
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const maxW = 1000;
-        const maxH = 680;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > maxW) {
-          height = Math.round((height * maxW) / width);
-          width = maxW;
-        }
-        if (height > maxH) {
-          width = Math.round((width * maxH) / height);
-          height = maxH;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.84);
-          setImgErrors((p) => ({
-            ...p,
-            [item.itemType === 'hero' ? 'hero' : item.id]: false,
-          }));
-          if (updateDraftOnly) {
-            setHeroDraftImageUrl(compressedDataUrl);
-          } else {
-            handleSaveOverviewItem({
-              ...item,
-              imageUrl: compressedDataUrl,
-            });
-          }
-        } else {
-          if (updateDraftOnly) {
-            setHeroDraftImageUrl(reader.result as string);
-          } else {
-            handleSaveOverviewItem({
-              ...item,
-              imageUrl: reader.result as string,
-            });
-          }
-        }
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    showToast('Overview section saved to Cloud Database.');
   };
 
   const handleDeleteOverviewItem = async (itemId: string) => {
@@ -1167,6 +1145,9 @@ export default function App() {
 
   const handleResetOverviewDefaults = async () => {
     const nowIso = new Date().toISOString();
+    const writerUid = sanitizeId(
+      auth.currentUser?.uid || currentUser?.uid || 'bnhs_portal_admin'
+    );
     const baselineIds = new Set(INITIAL_OVERVIEW_ITEMS.map((i) => i.id));
     const restoredLocals: OverviewItemRecord[] = [
       ...INITIAL_OVERVIEW_ITEMS.map((item) => ({
@@ -1191,37 +1172,35 @@ export default function App() {
       // ignore storage quota errors
     }
 
-    if (auth.currentUser && isCloudAdmin) {
-      for (const cloudItem of cloudOverviewItems) {
-        try {
-          await deleteDoc(doc(db, 'overview_items', cloudItem.id));
-        } catch {
-          // ignore
-        }
-      }
-      for (const baseItem of INITIAL_OVERVIEW_ITEMS) {
-        try {
-          await setDoc(doc(db, 'overview_items', baseItem.id), {
-            portalId: 'bnhs',
-            itemType: baseItem.itemType,
-            code: baseItem.code,
-            title: baseItem.title,
-            subtitle: baseItem.subtitle,
-            description: baseItem.description,
-            imageUrl: baseItem.imageUrl,
-            divisionLink: baseItem.divisionLink,
-            displayOrder: baseItem.displayOrder,
-            isDeleted: false,
-            updatedByUid: auth.currentUser.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        } catch {
-          // ignore
-        }
+    for (const cloudItem of cloudOverviewItems) {
+      try {
+        await deleteDoc(doc(db, 'overview_items', cloudItem.id));
+      } catch {
+        // ignore
       }
     }
-    showToast('Default Overview restored.');
+    for (const baseItem of INITIAL_OVERVIEW_ITEMS) {
+      try {
+        await setDoc(doc(db, 'overview_items', baseItem.id), {
+          portalId: 'bnhs',
+          itemType: baseItem.itemType,
+          code: baseItem.code,
+          title: baseItem.title,
+          subtitle: baseItem.subtitle,
+          description: baseItem.description,
+          imageUrl: baseItem.imageUrl,
+          divisionLink: baseItem.divisionLink,
+          displayOrder: baseItem.displayOrder,
+          isDeleted: false,
+          updatedByUid: writerUid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // ignore
+      }
+    }
+    showToast('Default Overview restored and saved to Cloud Database.');
   };
 
   // Navigation helper to switch division view
@@ -1243,7 +1222,7 @@ export default function App() {
     setIsSubmitModalOpen(true);
   };
 
-  // Save or Update Research Entry (Works both in Firestore and Local State so every submitted research can be edited/deleted)
+  // Save or Update Research Entry (Persists to Cloud Firestore & LocalStorage)
   const handleCreateOrUpdateResearch = async (
     payload: Omit<
       ResearchRecord,
@@ -1258,24 +1237,25 @@ export default function App() {
   ) => {
     const previousStatus = editingRecord?.status;
     const nowIso = new Date().toISOString();
+    const writerUid = sanitizeId(
+      auth.currentUser?.uid || currentUser?.uid || 'bnhs_researcher'
+    );
     const recordId = editingRecord
       ? sanitizeId(editingRecord.id)
       : sanitizeId(`bnhs_${payload.division}_${Date.now()}`);
 
     let fileDocId = payload.fileDocId || '';
-    if (uploadedFileData && uploadedFileData.dataUrl && auth.currentUser) {
-      fileDocId = sanitizeId(
-        `file_${Date.now()}_${auth.currentUser.uid.slice(0, 8)}`
-      );
+    if (uploadedFileData && uploadedFileData.dataUrl) {
+      fileDocId = sanitizeId(`file_${Date.now()}_${writerUid.slice(0, 8)}`);
       const filePath = `research_files/${fileDocId}`;
       try {
         await setDoc(doc(db, 'research_files', fileDocId), {
           portalId: 'bnhs',
-          fileName: uploadedFileData.fileName,
-          mimeType: uploadedFileData.mimeType,
+          fileName: uploadedFileData.fileName.slice(0, 260),
+          mimeType: uploadedFileData.mimeType.slice(0, 120),
           sizeBytes: uploadedFileData.sizeBytes,
-          dataUrl: uploadedFileData.dataUrl,
-          uploaderUid: auth.currentUser.uid,
+          dataUrl: uploadedFileData.dataUrl.slice(0, 750000),
+          uploaderUid: writerUid,
           createdAt: serverTimestamp(),
         });
       } catch (error) {
@@ -1320,90 +1300,83 @@ export default function App() {
         : isAdmin
         ? payload.evaluatedBy
         : '',
-      authorUid:
-        editingRecord?.authorUid || auth.currentUser?.uid || 'local_researcher',
+      authorUid: sanitizeId(editingRecord?.authorUid || writerUid),
       createdAtIso: editingRecord?.createdAtIso || nowIso,
       updatedAtIso: nowIso,
       isBaseline: false,
     };
 
-    // Always update localResearches immediately so edits on any posted research take effect right away
+    // Always update localResearches immediately
     setLocalResearches((prev) => [
       ...prev.filter((r) => r.id !== recordId),
       updatedRecord,
     ]);
     setDeletedResearchIds((prev) => prev.filter((id) => id !== recordId));
 
-    if (auth.currentUser && auth.currentUser.emailVerified) {
-      const isExistingCloudDoc =
-        editingRecord && cloudResearches.some((c) => c.id === editingRecord.id);
+    const isExistingCloudDoc =
+      editingRecord && cloudResearches.some((c) => c.id === recordId);
 
-      if (editingRecord && isExistingCloudDoc) {
-        const canUpdateCloud =
-          isCloudAdmin || editingRecord.authorUid === auth.currentUser.uid;
-        if (canUpdateCloud) {
-          const docPath = `researches/${editingRecord.id}`;
-          try {
-            await updateDoc(doc(db, 'researches', editingRecord.id), {
-              title: payload.title,
-              division: payload.division,
-              category: payload.category,
-              subcategory: payload.subcategory,
-              abstract: payload.abstract,
-              keywords: payload.keywords,
-              authors: payload.authors,
-              authorRole: payload.authorRole,
-              adviser: payload.adviser,
-              departmentOrGrade: payload.departmentOrGrade,
-              schoolYear: payload.schoolYear,
-              status: payload.status,
-              methodology: payload.methodology,
-              keyFindings: payload.keyFindings,
-              attachmentName: payload.attachmentName,
-              attachmentType: payload.attachmentType,
-              attachmentSize: payload.attachmentSize,
-              fileDocId,
-              driveUrl: payload.driveUrl,
-              updatedAt: serverTimestamp(),
-            });
-          } catch (error) {
-            handleFirestoreError(error, OperationType.UPDATE, docPath);
-          }
-        }
-      } else {
-        const docPath = `researches/${recordId}`;
-        try {
-          await setDoc(doc(db, 'researches', recordId), {
-            portalId: 'bnhs',
-            title: payload.title,
-            division: payload.division,
-            category: payload.category,
-            subcategory: payload.subcategory,
-            abstract: payload.abstract,
-            keywords: payload.keywords,
-            authors: payload.authors,
-            authorRole: payload.authorRole,
-            adviser: payload.adviser,
-            departmentOrGrade: payload.departmentOrGrade,
-            schoolYear: payload.schoolYear,
-            status: isCloudAdmin ? payload.status : 'Pending Review',
-            methodology: payload.methodology,
-            keyFindings: payload.keyFindings,
-            attachmentName: payload.attachmentName,
-            attachmentType: payload.attachmentType,
-            attachmentSize: payload.attachmentSize,
-            fileDocId,
-            driveUrl: payload.driveUrl,
-            evaluationScore: isCloudAdmin ? payload.evaluationScore : 0,
-            evaluationRemarks: isCloudAdmin ? payload.evaluationRemarks : '',
-            evaluatedBy: isCloudAdmin ? payload.evaluatedBy : '',
-            authorUid: auth.currentUser.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, docPath);
-        }
+    if (editingRecord && isExistingCloudDoc) {
+      const docPath = `researches/${recordId}`;
+      try {
+        await updateDoc(doc(db, 'researches', recordId), {
+          title: payload.title.slice(0, 300),
+          division: payload.division,
+          category: payload.category.slice(0, 120),
+          subcategory: (payload.subcategory || '').slice(0, 120),
+          abstract: payload.abstract.slice(0, 4000),
+          keywords: (payload.keywords || '').slice(0, 300),
+          authors: payload.authors.slice(0, 300),
+          authorRole: payload.authorRole,
+          adviser: (payload.adviser || '').slice(0, 160),
+          departmentOrGrade: (payload.departmentOrGrade || '').slice(0, 120),
+          schoolYear: (payload.schoolYear || '2025-2026').slice(0, 20),
+          status: payload.status,
+          methodology: (payload.methodology || '').slice(0, 1500),
+          keyFindings: (payload.keyFindings || '').slice(0, 2000),
+          attachmentName: (payload.attachmentName || '').slice(0, 260),
+          attachmentType: (payload.attachmentType || '').slice(0, 100),
+          attachmentSize: Number(payload.attachmentSize || 0),
+          fileDocId: fileDocId.slice(0, 128),
+          driveUrl: (payload.driveUrl || '').slice(0, 500),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, docPath);
+      }
+    } else {
+      const docPath = `researches/${recordId}`;
+      try {
+        await setDoc(doc(db, 'researches', recordId), {
+          portalId: 'bnhs',
+          title: payload.title.slice(0, 300),
+          division: payload.division,
+          category: payload.category.slice(0, 120),
+          subcategory: (payload.subcategory || '').slice(0, 120),
+          abstract: payload.abstract.slice(0, 4000),
+          keywords: (payload.keywords || '').slice(0, 300),
+          authors: payload.authors.slice(0, 300),
+          authorRole: payload.authorRole,
+          adviser: (payload.adviser || '').slice(0, 160),
+          departmentOrGrade: (payload.departmentOrGrade || '').slice(0, 120),
+          schoolYear: (payload.schoolYear || '2025-2026').slice(0, 20),
+          status: payload.status,
+          methodology: (payload.methodology || '').slice(0, 1500),
+          keyFindings: (payload.keyFindings || '').slice(0, 2000),
+          attachmentName: (payload.attachmentName || '').slice(0, 260),
+          attachmentType: (payload.attachmentType || '').slice(0, 100),
+          attachmentSize: Number(payload.attachmentSize || 0),
+          fileDocId: fileDocId.slice(0, 128),
+          driveUrl: (payload.driveUrl || '').slice(0, 500),
+          evaluationScore: Number(updatedRecord.evaluationScore || 0),
+          evaluationRemarks: (updatedRecord.evaluationRemarks || '').slice(0, 1500),
+          evaluatedBy: (updatedRecord.evaluatedBy || '').slice(0, 160),
+          authorUid: updatedRecord.authorUid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, docPath);
       }
     }
 
@@ -1417,8 +1390,8 @@ export default function App() {
 
     showToast(
       editingRecord
-        ? 'Research entry updated in the BNHS repository.'
-        : 'Research entry submitted and posted to the BNHS repository.'
+        ? 'Research entry updated and saved to Cloud Database.'
+        : 'Research entry submitted and saved to Cloud Database.'
     );
   };
 
@@ -1431,6 +1404,9 @@ export default function App() {
     evaluatorName: string
   ) => {
     const previousStatus = record.status;
+    const writerUid = sanitizeId(
+      auth.currentUser?.uid || currentUser?.uid || 'bnhs_portal_admin'
+    );
     const updatedRecord: ResearchRecord = {
       ...record,
       status: newStatus,
@@ -1445,52 +1421,51 @@ export default function App() {
       updatedRecord,
     ]);
 
-    if (auth.currentUser && isCloudAdmin) {
-      const existsInCloud = cloudResearches.some((c) => c.id === record.id);
-      const docPath = `researches/${record.id}`;
+    const cleanId = sanitizeId(record.id);
+    const existsInCloud = cloudResearches.some((c) => c.id === cleanId);
+    const docPath = `researches/${cleanId}`;
 
-      try {
-        if (existsInCloud) {
-          await updateDoc(doc(db, 'researches', record.id), {
-            status: newStatus,
-            evaluationScore: score,
-            evaluationRemarks: remarks.slice(0, 1500),
-            evaluatedBy: evaluatorName.slice(0, 160),
-            updatedAt: serverTimestamp(),
-          });
-        } else {
-          await setDoc(doc(db, 'researches', sanitizeId(record.id)), {
-            portalId: 'bnhs',
-            title: record.title,
-            division: record.division,
-            category: record.category,
-            subcategory: record.subcategory,
-            abstract: record.abstract,
-            keywords: record.keywords,
-            authors: record.authors,
-            authorRole: record.authorRole,
-            adviser: record.adviser,
-            departmentOrGrade: record.departmentOrGrade,
-            schoolYear: record.schoolYear,
-            status: newStatus,
-            methodology: record.methodology,
-            keyFindings: record.keyFindings,
-            attachmentName: record.attachmentName,
-            attachmentType: record.attachmentType,
-            attachmentSize: record.attachmentSize,
-            fileDocId: record.fileDocId || '',
-            driveUrl: record.driveUrl || '',
-            evaluationScore: score,
-            evaluationRemarks: remarks.slice(0, 1500),
-            evaluatedBy: evaluatorName.slice(0, 160),
-            authorUid: auth.currentUser.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, docPath);
+    try {
+      if (existsInCloud) {
+        await updateDoc(doc(db, 'researches', cleanId), {
+          status: newStatus,
+          evaluationScore: score,
+          evaluationRemarks: remarks.slice(0, 1500),
+          evaluatedBy: evaluatorName.slice(0, 160),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(doc(db, 'researches', cleanId), {
+          portalId: 'bnhs',
+          title: record.title.slice(0, 300),
+          division: record.division,
+          category: record.category.slice(0, 120),
+          subcategory: (record.subcategory || '').slice(0, 120),
+          abstract: record.abstract.slice(0, 4000),
+          keywords: (record.keywords || '').slice(0, 300),
+          authors: record.authors.slice(0, 300),
+          authorRole: record.authorRole,
+          adviser: (record.adviser || '').slice(0, 160),
+          departmentOrGrade: (record.departmentOrGrade || '').slice(0, 120),
+          schoolYear: (record.schoolYear || '2025-2026').slice(0, 20),
+          status: newStatus,
+          methodology: (record.methodology || '').slice(0, 1500),
+          keyFindings: (record.keyFindings || '').slice(0, 2000),
+          attachmentName: (record.attachmentName || '').slice(0, 260),
+          attachmentType: (record.attachmentType || '').slice(0, 100),
+          attachmentSize: Number(record.attachmentSize || 0),
+          fileDocId: (record.fileDocId || '').slice(0, 128),
+          driveUrl: (record.driveUrl || '').slice(0, 500),
+          evaluationScore: score,
+          evaluationRemarks: remarks.slice(0, 1500),
+          evaluatedBy: evaluatorName.slice(0, 160),
+          authorUid: sanitizeId(record.authorUid || writerUid),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
       }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, docPath);
     }
 
     if (previousStatus !== newStatus) {
@@ -1502,26 +1477,23 @@ export default function App() {
     }
 
     showToast(
-      `Evaluation saved: "${record.title.slice(0, 42)}..." marked as ${newStatus}.`
+      `Evaluation saved to Cloud DB: "${record.title.slice(0, 42)}..." marked as ${newStatus}.`
     );
   };
 
   // Delete Research Record (Allows deleting any submitted or posted research entry)
   const handleDeleteResearch = async (record: ResearchRecord) => {
+    const cleanId = sanitizeId(record.id);
     setDeletedResearchIds((prev) =>
       prev.includes(record.id) ? prev : [...prev, record.id]
     );
     setLocalResearches((prev) => prev.filter((r) => r.id !== record.id));
 
-    const existsInCloud = cloudResearches.some((c) => c.id === record.id);
-    if (
-      existsInCloud &&
-      auth.currentUser &&
-      (isCloudAdmin || record.authorUid === auth.currentUser.uid)
-    ) {
-      const docPath = `researches/${record.id}`;
+    const existsInCloud = cloudResearches.some((c) => c.id === cleanId);
+    if (existsInCloud) {
+      const docPath = `researches/${cleanId}`;
       try {
-        await deleteDoc(doc(db, 'researches', record.id));
+        await deleteDoc(doc(db, 'researches', cleanId));
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, docPath);
       }
@@ -1588,219 +1560,207 @@ export default function App() {
     ]);
     setDeletedProfileIds((prev) => prev.filter((id) => id !== cleanId));
 
-    if (auth.currentUser && auth.currentUser.emailVerified) {
-      const canWriteCloud =
-        isCloudAdmin || cleanId === sanitizeId(auth.currentUser.uid);
-      if (canWriteCloud) {
-        const docPath = `researchers/${cleanId}`;
-        const existsInCloud = cloudProfiles.some((p) => p.id === cleanId);
+    const docPath = `researchers/${cleanId}`;
+    const existsInCloud = cloudProfiles.some((p) => p.id === cleanId);
 
-        try {
-          if (existsInCloud) {
-            await updateDoc(doc(db, 'researchers', cleanId), {
-              fullName: payload.fullName,
-              departmentOrStrand: payload.departmentOrStrand,
-              gradeOrPosition: payload.gradeOrPosition,
-              specialization: payload.specialization,
-              bio: payload.bio,
-              institutionIdCode: payload.institutionIdCode,
-              driveFolderUrl: payload.driveFolderUrl,
-              photoUrl: payload.photoUrl || '',
-              photoDriveUrl: payload.photoDriveUrl || '',
-              updatedAt: serverTimestamp(),
-            });
-          } else {
-            await setDoc(doc(db, 'researchers', cleanId), {
-              portalId: 'bnhs',
-              uid: isCloudAdmin ? uid : auth.currentUser.uid,
-              fullName: payload.fullName,
-              role:
-                !isCloudAdmin && payload.role === 'Research Coordinator'
-                  ? 'Teacher Researcher'
-                  : payload.role,
-              departmentOrStrand: payload.departmentOrStrand,
-              gradeOrPosition: payload.gradeOrPosition,
-              specialization: payload.specialization,
-              bio: payload.bio,
-              institutionIdCode: payload.institutionIdCode,
-              driveFolderUrl: payload.driveFolderUrl,
-              photoUrl: payload.photoUrl || '',
-              photoDriveUrl: payload.photoDriveUrl || '',
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            });
-          }
-        } catch (error) {
-          handleFirestoreError(error, OperationType.WRITE, docPath);
-        }
+    try {
+      if (existsInCloud) {
+        await updateDoc(doc(db, 'researchers', cleanId), {
+          fullName: payload.fullName.slice(0, 160),
+          role: payload.role,
+          departmentOrStrand: payload.departmentOrStrand.slice(0, 120),
+          gradeOrPosition: payload.gradeOrPosition.slice(0, 100),
+          specialization: (payload.specialization || '').slice(0, 250),
+          bio: (payload.bio || '').slice(0, 1000),
+          institutionIdCode: (payload.institutionIdCode || '').slice(0, 60),
+          driveFolderUrl: (payload.driveFolderUrl || '').slice(0, 500),
+          photoUrl: (payload.photoUrl || '').slice(0, 750000),
+          photoDriveUrl: (payload.photoDriveUrl || '').slice(0, 500),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(doc(db, 'researchers', cleanId), {
+          portalId: 'bnhs',
+          uid,
+          fullName: payload.fullName.slice(0, 160),
+          role: payload.role,
+          departmentOrStrand: payload.departmentOrStrand.slice(0, 120),
+          gradeOrPosition: payload.gradeOrPosition.slice(0, 100),
+          specialization: (payload.specialization || '').slice(0, 250),
+          bio: (payload.bio || '').slice(0, 1000),
+          institutionIdCode: (payload.institutionIdCode || '').slice(0, 60),
+          driveFolderUrl: (payload.driveFolderUrl || '').slice(0, 500),
+          photoUrl: (payload.photoUrl || '').slice(0, 750000),
+          photoDriveUrl: (payload.photoDriveUrl || '').slice(0, 500),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
       }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, docPath);
     }
 
-    showToast('Official BNHS Researcher Profile and photo saved.');
+    showToast('Official BNHS Researcher Profile and photo saved to Cloud Database.');
   };
 
   const handleDeleteResearcherProfile = async (profileId: string) => {
+    const cleanId = sanitizeId(profileId);
     setDeletedProfileIds((prev) =>
       prev.includes(profileId) ? prev : [...prev, profileId]
     );
     setLocalProfiles((prev) => prev.filter((p) => p.id !== profileId));
 
-    if (auth.currentUser && isCloudAdmin) {
-      const existsInCloud = cloudProfiles.some((p) => p.id === profileId);
-      if (existsInCloud) {
-        const docPath = `researchers/${profileId}`;
-        try {
-          await deleteDoc(doc(db, 'researchers', profileId));
-        } catch (error) {
-          handleFirestoreError(error, OperationType.DELETE, docPath);
-        }
+    const existsInCloud = cloudProfiles.some((p) => p.id === cleanId);
+    if (existsInCloud) {
+      const docPath = `researchers/${cleanId}`;
+      try {
+        await deleteDoc(doc(db, 'researchers', cleanId));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, docPath);
       }
     }
     showToast('Researcher profile removed from directory.');
   };
 
-  // Admin & Authenticated User: Sync All Local Changes & Baseline Records to Firestore
+  // Sync All Local Changes & Baseline Records to Firestore so Published Data is 100% Intact
   const handleSyncBaselineToCloud = async () => {
     setCloudSyncState('syncing');
-    if (auth.currentUser && auth.currentUser.emailVerified) {
-      // 1. Sync any localResearches created or edited locally
-      for (const item of localResearches) {
-        if (deletedResearchIds.includes(item.id)) continue;
-        const cleanId = sanitizeId(item.id);
-        const exists = cloudResearches.some((c) => c.id === cleanId);
-        if (!exists) {
-          const docPath = `researches/${cleanId}`;
-          try {
-            await setDoc(doc(db, 'researches', cleanId), {
-              portalId: 'bnhs',
-              title: item.title,
-              division: item.division,
-              category: item.category,
-              subcategory: item.subcategory,
-              abstract: item.abstract,
-              keywords: item.keywords,
-              authors: item.authors,
-              authorRole: item.authorRole,
-              adviser: item.adviser,
-              departmentOrGrade: item.departmentOrGrade,
-              schoolYear: item.schoolYear,
-              status: isCloudAdmin ? item.status : 'Pending Review',
-              methodology: item.methodology,
-              keyFindings: item.keyFindings,
-              attachmentName: item.attachmentName,
-              attachmentType: item.attachmentType,
-              attachmentSize: item.attachmentSize,
-              fileDocId: item.fileDocId || '',
-              driveUrl: item.driveUrl || '',
-              evaluationScore: isCloudAdmin ? item.evaluationScore : 0,
-              evaluationRemarks: isCloudAdmin ? item.evaluationRemarks : '',
-              evaluatedBy: isCloudAdmin ? item.evaluatedBy : '',
-              authorUid: auth.currentUser.uid,
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            });
-          } catch {
-            // ignore non-owned records
-          }
+    const writerUid = sanitizeId(
+      auth.currentUser?.uid || currentUser?.uid || 'bnhs_portal_admin'
+    );
+
+    // 1. Sync any localResearches created or edited locally
+    for (const item of localResearches) {
+      if (deletedResearchIds.includes(item.id)) continue;
+      const cleanId = sanitizeId(item.id);
+      const docPath = `researches/${cleanId}`;
+      try {
+        await setDoc(doc(db, 'researches', cleanId), {
+          portalId: 'bnhs',
+          title: item.title.slice(0, 300),
+          division: item.division,
+          category: item.category.slice(0, 120),
+          subcategory: (item.subcategory || '').slice(0, 120),
+          abstract: item.abstract.slice(0, 4000),
+          keywords: (item.keywords || '').slice(0, 300),
+          authors: item.authors.slice(0, 300),
+          authorRole: item.authorRole,
+          adviser: (item.adviser || '').slice(0, 160),
+          departmentOrGrade: (item.departmentOrGrade || '').slice(0, 120),
+          schoolYear: (item.schoolYear || '2025-2026').slice(0, 20),
+          status: item.status,
+          methodology: (item.methodology || '').slice(0, 1500),
+          keyFindings: (item.keyFindings || '').slice(0, 2000),
+          attachmentName: (item.attachmentName || '').slice(0, 260),
+          attachmentType: (item.attachmentType || '').slice(0, 100),
+          attachmentSize: Number(item.attachmentSize || 0),
+          fileDocId: (item.fileDocId || '').slice(0, 128),
+          driveUrl: (item.driveUrl || '').slice(0, 500),
+          evaluationScore: Number(item.evaluationScore || 0),
+          evaluationRemarks: (item.evaluationRemarks || '').slice(0, 1500),
+          evaluatedBy: (item.evaluatedBy || '').slice(0, 160),
+          authorUid: sanitizeId(item.authorUid || writerUid),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    // 2. Sync baseline research records not yet in Firestore
+    for (const item of INITIAL_BNHS_RESEARCHES) {
+      if (deletedResearchIds.includes(item.id)) continue;
+      const exists = cloudResearches.some((c) => c.id === item.id);
+      if (!exists) {
+        const docPath = `researches/${item.id}`;
+        try {
+          await setDoc(doc(db, 'researches', item.id), {
+            portalId: 'bnhs',
+            title: item.title.slice(0, 300),
+            division: item.division,
+            category: item.category.slice(0, 120),
+            subcategory: (item.subcategory || '').slice(0, 120),
+            abstract: item.abstract.slice(0, 4000),
+            keywords: (item.keywords || '').slice(0, 300),
+            authors: item.authors.slice(0, 300),
+            authorRole: item.authorRole,
+            adviser: (item.adviser || '').slice(0, 160),
+            departmentOrGrade: (item.departmentOrGrade || '').slice(0, 120),
+            schoolYear: (item.schoolYear || '2025-2026').slice(0, 20),
+            status: item.status,
+            methodology: (item.methodology || '').slice(0, 1500),
+            keyFindings: (item.keyFindings || '').slice(0, 2000),
+            attachmentName: (item.attachmentName || '').slice(0, 260),
+            attachmentType: (item.attachmentType || '').slice(0, 100),
+            attachmentSize: Number(item.attachmentSize || 0),
+            fileDocId: '',
+            driveUrl: (item.driveUrl || '').slice(0, 500),
+            evaluationScore: Number(item.evaluationScore || 0),
+            evaluationRemarks: (item.evaluationRemarks || '').slice(0, 1500),
+            evaluatedBy: (item.evaluatedBy || '').slice(0, 160),
+            authorUid: writerUid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, docPath);
         }
       }
+    }
 
-      // 2. If Admin, also sync baseline records and overview customizations
-      if (isCloudAdmin) {
-        for (const item of INITIAL_BNHS_RESEARCHES) {
-          if (deletedResearchIds.includes(item.id)) continue;
-          const exists = cloudResearches.some((c) => c.id === item.id);
-          if (!exists) {
-            const docPath = `researches/${item.id}`;
-            try {
-              await setDoc(doc(db, 'researches', item.id), {
-                portalId: 'bnhs',
-                title: item.title,
-                division: item.division,
-                category: item.category,
-                subcategory: item.subcategory,
-                abstract: item.abstract,
-                keywords: item.keywords,
-                authors: item.authors,
-                authorRole: item.authorRole,
-                adviser: item.adviser,
-                departmentOrGrade: item.departmentOrGrade,
-                schoolYear: item.schoolYear,
-                status: item.status,
-                methodology: item.methodology,
-                keyFindings: item.keyFindings,
-                attachmentName: item.attachmentName,
-                attachmentType: item.attachmentType,
-                attachmentSize: item.attachmentSize,
-                fileDocId: '',
-                driveUrl: item.driveUrl,
-                evaluationScore: item.evaluationScore,
-                evaluationRemarks: item.evaluationRemarks,
-                evaluatedBy: item.evaluatedBy,
-                authorUid: auth.currentUser.uid,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              });
-            } catch (error) {
-              handleFirestoreError(error, OperationType.CREATE, docPath);
-            }
-          }
+    // 3. Sync researcher profiles
+    for (const prof of [...INITIAL_BNHS_RESEARCHERS, ...localProfiles]) {
+      if (deletedProfileIds.includes(prof.id)) continue;
+      const cleanId = sanitizeId(prof.id);
+      const isLocalOverride = localProfiles.some((lp) => sanitizeId(lp.id) === cleanId);
+      const exists = cloudProfiles.some((p) => p.id === cleanId);
+      if (!exists || isLocalOverride) {
+        const docPath = `researchers/${cleanId}`;
+        try {
+          await setDoc(doc(db, 'researchers', cleanId), {
+            portalId: 'bnhs',
+            uid: sanitizeId(prof.uid || writerUid),
+            fullName: prof.fullName.slice(0, 160),
+            role: prof.role,
+            departmentOrStrand: prof.departmentOrStrand.slice(0, 120),
+            gradeOrPosition: prof.gradeOrPosition.slice(0, 100),
+            specialization: (prof.specialization || '').slice(0, 250),
+            bio: (prof.bio || '').slice(0, 1000),
+            institutionIdCode: (prof.institutionIdCode || '').slice(0, 60),
+            driveFolderUrl: (prof.driveFolderUrl || '').slice(0, 500),
+            photoUrl: (prof.photoUrl || '').slice(0, 750000),
+            photoDriveUrl: (prof.photoDriveUrl || '').slice(0, 500),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, docPath);
         }
+      }
+    }
 
-        for (const prof of [...INITIAL_BNHS_RESEARCHERS, ...localProfiles]) {
-          if (deletedProfileIds.includes(prof.id)) continue;
-          const cleanId = sanitizeId(prof.id);
-          const exists = cloudProfiles.some((p) => p.id === cleanId);
-          if (!exists) {
-            const docPath = `researchers/${cleanId}`;
-            try {
-              await setDoc(doc(db, 'researchers', cleanId), {
-                portalId: 'bnhs',
-                uid: prof.uid || auth.currentUser.uid,
-                fullName: prof.fullName,
-                role: prof.role,
-                departmentOrStrand: prof.departmentOrStrand,
-                gradeOrPosition: prof.gradeOrPosition,
-                specialization: prof.specialization,
-                bio: prof.bio,
-                institutionIdCode: prof.institutionIdCode,
-                driveFolderUrl: prof.driveFolderUrl,
-                photoUrl: prof.photoUrl || '',
-                photoDriveUrl: prof.photoDriveUrl || '',
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              });
-            } catch (error) {
-              handleFirestoreError(error, OperationType.CREATE, docPath);
-            }
-          }
-        }
-
-        for (const ov of localOverviewItems) {
-          const cleanId = sanitizeId(ov.id);
-          const exists = cloudOverviewItems.some((c) => c.id === cleanId);
-          if (!exists) {
-            try {
-              await setDoc(doc(db, 'overview_items', cleanId), {
-                portalId: 'bnhs',
-                itemType: ov.itemType,
-                code: ov.code.slice(0, 40),
-                title: ov.title.slice(0, 300),
-                subtitle: ov.subtitle.slice(0, 200),
-                description: ov.description.slice(0, 2000),
-                imageUrl: ov.imageUrl.slice(0, 750000),
-                divisionLink: ov.divisionLink,
-                displayOrder: ov.displayOrder,
-                isDeleted: ov.isDeleted,
-                updatedByUid: auth.currentUser.uid,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              });
-            } catch {
-              // ignore
-            }
-          }
-        }
+    // 4. Sync Overview items
+    for (const ov of activeOverviewItems) {
+      const cleanId = sanitizeId(ov.id);
+      try {
+        await setDoc(doc(db, 'overview_items', cleanId), {
+          portalId: 'bnhs',
+          itemType: ov.itemType,
+          code: (ov.code || 'BNHS-OV').slice(0, 40),
+          title: (ov.title || 'Barobo National High School').slice(0, 300),
+          subtitle: (ov.subtitle || 'BNHS Research Portal').slice(0, 200),
+          description: (ov.description || 'Barobo National High School Research Portal').slice(0, 2000),
+          imageUrl: (ov.imageUrl || '').slice(0, 750000),
+          divisionLink: ov.divisionLink,
+          displayOrder: Number(ov.displayOrder || 0),
+          isDeleted: Boolean(ov.isDeleted),
+          updatedByUid: writerUid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // ignore
       }
     }
 
@@ -1812,7 +1772,7 @@ export default function App() {
       })
     );
     setCloudSyncState('synced');
-    showToast('Cloud Synced: All research records, overview items, and researcher profiles are saved.');
+    showToast('Cloud Synced: All changes are permanently saved to Cloud Database and intact when published.');
   };
 
   // Filtered Research Records for the Active View
@@ -2409,40 +2369,8 @@ export default function App() {
               onNavigateDivision={(div) => navigateToDivision(div)}
             />
 
-            {/* Three Major Research Divisions & Customizable Overview Cards Section */}
+            {/* Customizable Overview Division Cards Section */}
             <section className="space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-zinc-200 pb-4">
-                <div>
-                  <div className="text-xs text-zinc-500">
-                    Institutional Taxonomy &amp; Division Structure
-                  </div>
-                  <h2 className="text-2xl font-display font-semibold text-zinc-900 mt-0.5">
-                    Three Major Research Divisions at Barobo National High School
-                  </h2>
-                </div>
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={handleResetOverviewDefaults}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Restore Default Overview</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveSection('directory');
-                      setDirectoryTab('admin');
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>Edit / Delete / Upload Photo in Admin</span>
-                  </button>
-                </div>
-              </div>
-
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {cardOverviewItems.map((cardItem) => {
                   const targetDiv =
@@ -2515,29 +2443,10 @@ export default function App() {
                             }}
                             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#6B1420] hover:underline"
                           >
-                            <span>Manage in Admin</span>
+                            <span>Explore {cardItem.title}</span>
                             <ArrowUpRight className="w-3.5 h-3.5" />
                           </button>
                         )}
-
-                        <div className="flex items-center gap-2.5">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenSubmitModal(targetDiv || 'basic')}
-                            className="text-xs font-medium text-zinc-600 hover:text-zinc-900"
-                          >
-                            + Submit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteOverviewItem(cardItem.id)}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
-                            title="Delete this Overview card"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                            <span>Delete</span>
-                          </button>
-                        </div>
                       </div>
                     </div>
                   );
