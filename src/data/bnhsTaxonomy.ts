@@ -1214,6 +1214,8 @@ export interface ResearchInformationItemRecord {
   title: string;
   category: string;
   description: string;
+  videoUrl: string; // The uploaded video data URL or YouTube/Google Drive link
+  videoSourceType: 'youtube' | 'drive' | 'direct' | 'upload';
   imageUrl?: string;
   linkUrl?: string;
   displayOrder: number;
@@ -1324,9 +1326,11 @@ export const INITIAL_RESEARCH_INFORMATION: ResearchInformationItemRecord[] = [
   {
     id: 'info_item_01',
     portalId: 'bnhs',
-    title: 'BNHS Institutional Research Agenda & DepEd BERA Priorities',
-    category: 'Basic Education Research Agenda (BERA)',
-    description: 'Guided by DepEd Order No. 16, s. 2017, Barobo National High School promotes evidence-based pedagogical development, teacher practitioner inquiry, and student STEM innovation. Research outcomes are integrated into the School Improvement Plan (SIP) and curriculum intervention programs.',
+    title: 'BNHS Institutional Research Agenda & DepEd BERA Priorities Video Orientation',
+    category: 'DepEd BERA Video Briefing',
+    description: 'Guided by DepEd Order No. 16, s. 2017, Barobo National High School promotes evidence-based pedagogical development and student STEM innovation. Watch this institutional video briefing on the basic education research agenda priorities, proposal submission, and evaluation workflows.',
+    videoUrl: 'https://www.youtube.com/watch?v=ScMzIvxBSi4',
+    videoSourceType: 'youtube',
     imageUrl: '/src/assets/images/bnhs_info_research_agenda_1794325398231.jpg',
     linkUrl: 'https://www.deped.gov.ph',
     displayOrder: 1,
@@ -1337,11 +1341,13 @@ export const INITIAL_RESEARCH_INFORMATION: ResearchInformationItemRecord[] = [
   {
     id: 'info_item_02',
     portalId: 'bnhs',
-    title: 'TUKLAS Science Fair: Scientific Review Committee (SRC) Clearance',
-    category: 'STEM Research Protocols',
-    description: 'All learner investigations in Life Science, Physical Science, Robotics & Intelligent Machines, and the Innovation Expo must secure Scientific Review Committee (SRC) pre-approval and safety clearance before data collection or hardware prototyping begins.',
+    title: 'TUKLAS Research Project Fair & Scientific Review Committee (SRC) Video Defense',
+    category: 'TUKLAS STEM Video Defense',
+    description: 'All learner investigations in Life Science, Physical Science, Robotics & Intelligent Machines, and the Innovation Expo must secure Scientific Review Committee (SRC) pre-approval. Watch learner project demonstrations and defense presentations recorded at Barobo NHS.',
+    videoUrl: 'https://drive.google.com/file/d/1B-5mP0lYgZBNHS_Research_Defense/preview',
+    videoSourceType: 'drive',
     imageUrl: '/src/assets/images/bnhs_gallery_stem_fair_1794325399735.jpg',
-    linkUrl: '',
+    linkUrl: 'https://drive.google.com',
     displayOrder: 2,
     createdAtIso: '2026-02-02T08:00:00.000Z',
     updatedAtIso: '2026-02-02T08:00:00.000Z',
@@ -1350,11 +1356,13 @@ export const INITIAL_RESEARCH_INFORMATION: ResearchInformationItemRecord[] = [
   {
     id: 'info_item_03',
     portalId: 'bnhs',
-    title: 'Technical Review: Grammarian & Statistician Evaluation Workflow',
-    category: 'Quality Assurance & Clearance',
-    description: 'School-based manuscripts undergo formal structural reviews by the designated School Research Grammarian for APA 7th edition language rigor, followed by data validation from the School Research Statistician prior to coordinator certification.',
-    imageUrl: '/src/assets/images/bnhs_gallery_marine_fieldwork_1794325420611.jpg',
-    linkUrl: '',
+    title: 'Classroom Action Research: Problem Identification & Intervention Video Guide',
+    category: 'Action Research Methodology',
+    description: 'Instructional video lecture for Master Teachers and teacher researchers on designing pre-test/post-test comparative classroom interventions, measuring statistical significance, and drafting actionable recommendations for school improvement.',
+    videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    videoSourceType: 'youtube',
+    imageUrl: PORTAL_IMAGES.actionResearch,
+    linkUrl: 'https://www.deped.gov.ph',
     displayOrder: 3,
     createdAtIso: '2026-02-03T08:00:00.000Z',
     updatedAtIso: '2026-02-03T08:00:00.000Z',
@@ -1363,11 +1371,13 @@ export const INITIAL_RESEARCH_INFORMATION: ResearchInformationItemRecord[] = [
   {
     id: 'info_item_04',
     portalId: 'bnhs',
-    title: 'Seven DepEd Action Research Themes Implementation Matrix',
-    category: 'Practitioner Action Research',
-    description: 'Teachers and Master Teachers address classroom challenges across 7 DepEd BERA themes: Teaching and Learning, Child Protection, Human Resource Development, Governance, Disaster Risk Reduction, Gender and Development, and Inclusive Education.',
-    imageUrl: PORTAL_IMAGES.actionResearch,
-    linkUrl: '',
+    title: 'Research Ethics, Data Privacy & School Grammarian Review Protocol',
+    category: 'Institutional Ethics & QA Video',
+    description: 'Compliance briefing on the Data Privacy Act of 2012, parental informed consent for minor student respondents, plagiarism avoidance, and APA 7th edition school grammarian editorial clearance workflows.',
+    videoUrl: 'https://drive.google.com/file/d/1C_BNHS_Ethics_and_Data_Protocols/preview',
+    videoSourceType: 'drive',
+    imageUrl: '/src/assets/images/bnhs_gallery_marine_fieldwork_1794325420611.jpg',
+    linkUrl: 'https://drive.google.com',
     displayOrder: 4,
     createdAtIso: '2026-02-04T08:00:00.000Z',
     updatedAtIso: '2026-02-04T08:00:00.000Z',

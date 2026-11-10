@@ -626,7 +626,7 @@
     },
     "ResearchInformationItem": {
       "title": "ResearchInformationItem",
-      "description": "1000x500 institutional research guidance or mandate panel for the Overview section.",
+      "description": "1000x500 institutional research video panel for the Overview section.",
       "type": "object",
       "properties": {
         "portalId": {
@@ -645,7 +645,15 @@
         },
         "description": {
           "type": "string",
-          "maxLength": 2000
+          "maxLength": 3000
+        },
+        "videoUrl": {
+          "type": "string",
+          "maxLength": 750000
+        },
+        "videoSourceType": {
+          "type": "string",
+          "maxLength": 30
         },
         "imageUrl": {
           "type": "string",
@@ -667,7 +675,7 @@
           "format": "date-time"
         }
       },
-      "required": ["portalId", "title", "category", "description", "imageUrl", "linkUrl", "displayOrder", "createdAt", "updatedAt"]
+      "required": ["portalId", "title", "category", "description", "videoUrl", "videoSourceType", "imageUrl", "linkUrl", "displayOrder", "createdAt", "updatedAt"]
     }
   },
   "firestore": {

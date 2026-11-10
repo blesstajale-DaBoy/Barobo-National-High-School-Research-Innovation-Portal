@@ -263,15 +263,17 @@ service cloud.firestore {
 
     function isValidInformationItem(data) {
       return data.keys().hasAll([
-          'portalId', 'title', 'category', 'description', 'imageUrl', 'linkUrl', 'displayOrder', 'createdAt', 'updatedAt'
+          'portalId', 'title', 'category', 'description', 'videoUrl', 'videoSourceType', 'imageUrl', 'linkUrl', 'displayOrder', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'portalId', 'title', 'category', 'description', 'imageUrl', 'linkUrl', 'displayOrder', 'createdAt', 'updatedAt'
+          'portalId', 'title', 'category', 'description', 'videoUrl', 'videoSourceType', 'imageUrl', 'linkUrl', 'displayOrder', 'createdAt', 'updatedAt'
         ]) &&
         data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
         data.category is string && data.category.size() <= 120 &&
-        data.description is string && data.description.size() <= 2000 &&
+        data.description is string && data.description.size() <= 3000 &&
+        data.videoUrl is string && data.videoUrl.size() <= 750000 &&
+        data.videoSourceType is string && data.videoSourceType.size() <= 30 &&
         data.imageUrl is string && data.imageUrl.size() <= 750000 &&
         data.linkUrl is string && data.linkUrl.size() <= 500 &&
         data.displayOrder is number && data.displayOrder >= 0 && data.displayOrder <= 1000 &&

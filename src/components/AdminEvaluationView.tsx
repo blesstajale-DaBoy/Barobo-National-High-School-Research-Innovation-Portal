@@ -16,6 +16,9 @@ import {
   Mail,
   Globe,
   ExternalLink,
+  Video,
+  Film,
+  Play,
 } from 'lucide-react';
 import {
   ResearchRecord,
@@ -31,6 +34,7 @@ import {
   downloadStandalonePortalHtml,
   getDivisionLabel,
 } from '../utils/reportExporter';
+import { parseVideoSource } from '../utils/videoUtils';
 
 /**
  * Converts a Google Drive sharing link (e.g. https://drive.google.com/file/d/FILE_ID/view)
@@ -147,14 +151,16 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
   const [galFeedback, setGalFeedback] = useState<string>('');
   const [confirmDeleteGalId, setConfirmDeleteGalId] = useState<string | null>(null);
 
-  // Research Information Manager State (1000 x 500 Topics)
+  // Research Information Manager State (1000 x 500 Videos - YouTube & Google Drive)
   const [isInfoFormOpen, setIsInfoFormOpen] = useState<boolean>(false);
   const [editingInfoId, setEditingInfoId] = useState<string | null>(null);
   const [infoTitle, setInfoTitle] = useState<string>('');
   const [infoCategory, setInfoCategory] = useState<string>('Basic Education Research Agenda (BERA)');
   const [infoDescription, setInfoDescription] = useState<string>('');
+  const [infoVideoUrl, setInfoVideoUrl] = useState<string>('');
+  const [infoVideoSourceType, setInfoVideoSourceType] = useState<'youtube' | 'drive' | 'direct' | 'upload'>('youtube');
+  const [infoVideoLinkInput, setInfoVideoLinkInput] = useState<string>('');
   const [infoImageUrl, setInfoImageUrl] = useState<string>('');
-  const [infoWebLinkInput, setInfoWebLinkInput] = useState<string>('');
   const [infoLinkUrl, setInfoLinkUrl] = useState<string>('');
   const [infoOrder, setInfoOrder] = useState<number>(1);
   const [savingInfo, setSavingInfo] = useState<boolean>(false);
@@ -371,14 +377,16 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
     }
   };
 
-  // Information Manager Handlers (1000 x 500 Guidance Topics)
+  // Information Manager Handlers (1000 x 500 Videos - YouTube & Google Drive Only)
   const openAddInfoItem = () => {
     setEditingInfoId(null);
     setInfoTitle('');
     setInfoCategory('Basic Education Research Agenda (BERA)');
     setInfoDescription('');
+    setInfoVideoUrl('https://www.youtube.com/watch?v=ScMzIvxBSi4');
+    setInfoVideoSourceType('youtube');
+    setInfoVideoLinkInput('https://www.youtube.com/watch?v=ScMzIvxBSi4');
     setInfoImageUrl('');
-    setInfoWebLinkInput('');
     setInfoLinkUrl('');
     setInfoOrder(informationItems.length + 1);
     setIsInfoFormOpen(true);
@@ -390,36 +398,47 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
     setInfoTitle(item.title);
     setInfoCategory(item.category);
     setInfoDescription(item.description);
+    setInfoVideoUrl(item.videoUrl || '');
+    setInfoVideoSourceType(item.videoSourceType || 'youtube');
+    setInfoVideoLinkInput(item.videoUrl || '');
     setInfoImageUrl(item.imageUrl || '');
-    setInfoWebLinkInput(item.imageUrl?.startsWith('data:') ? '' : (item.imageUrl || ''));
     setInfoLinkUrl(item.linkUrl || '');
     setInfoOrder(item.displayOrder);
     setIsInfoFormOpen(true);
     setInfoFeedback('');
   };
 
-  const handleInfoPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleApplyVideoLink = (rawLink: string) => {
+    setInfoVideoLinkInput(rawLink);
+    const parsed = parseVideoSource(rawLink);
+    setInfoVideoUrl(rawLink);
+    setInfoVideoSourceType(
+      parsed.type === 'youtube'
+        ? 'youtube'
+        : parsed.type === 'drive'
+        ? 'drive'
+        : 'direct'
+    );
+  };
+
+  const handleInfoVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > 25 * 1024 * 1024) {
+      setInfoFeedback(
+        'Video file is larger than 25MB. For fast loading and smooth cross-device streaming, paste a YouTube or Google Drive link instead.'
+      );
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {
       const rawDataUrl = String(event.target?.result || '');
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 1000;
-        canvas.height = 500;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, 1000, 500);
-          const compressed = canvas.toDataURL('image/jpeg', 0.85);
-          setInfoImageUrl(compressed);
-        } else {
-          setInfoImageUrl(rawDataUrl);
-        }
-      };
-      img.src = rawDataUrl;
+      setInfoVideoUrl(rawDataUrl);
+      setInfoVideoSourceType('upload');
+      setInfoVideoLinkInput('');
+      setInfoFeedback('Local MP4/WebM video loaded for 1000 × 500 Research Information playback.');
     };
     reader.readAsDataURL(file);
   };
@@ -431,15 +450,27 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
     setInfoFeedback('');
     try {
       const id = editingInfoId || `info_${Date.now()}`;
-      const finalImg = resolveOverviewImageLink(
-        infoImageUrl || infoWebLinkInput || '/src/assets/images/bnhs_info_research_agenda_1794325398231.jpg'
-      );
+      const finalVideoUrl =
+        infoVideoUrl.trim() ||
+        infoVideoLinkInput.trim() ||
+        'https://www.youtube.com/watch?v=ScMzIvxBSi4';
+      const parsed = parseVideoSource(finalVideoUrl);
+      const finalSourceType =
+        infoVideoSourceType ||
+        (parsed.type === 'youtube'
+          ? 'youtube'
+          : parsed.type === 'drive'
+          ? 'drive'
+          : 'direct');
+
       await onSaveInformationItem({
         id,
         title: infoTitle.trim(),
         category: infoCategory.trim(),
         description: infoDescription.trim(),
-        imageUrl: finalImg,
+        videoUrl: finalVideoUrl,
+        videoSourceType: finalSourceType,
+        imageUrl: infoImageUrl || '',
         linkUrl: infoLinkUrl.trim(),
         displayOrder: Number(infoOrder || 1),
       });
@@ -447,8 +478,8 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
       setEditingInfoId(null);
       setInfoFeedback(
         editingInfoId
-          ? 'Research Information topic updated successfully (1000 × 500).'
-          : 'New Research Information topic added (1000 × 500).'
+          ? 'Research Information video updated successfully (1000 × 500).'
+          : 'New Research Information video added (1000 × 500).'
       );
     } finally {
       setSavingInfo(false);
@@ -586,8 +617,8 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                 : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
             }`}
           >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>03. Research Information (1000 × 500 Guidance &amp; Agenda)</span>
+            <Film className="w-3.5 h-3.5" />
+            <span>03. Research Information (1000 × 500 Video Only · YouTube &amp; Google Drive)</span>
           </button>
         </div>
 
@@ -1206,20 +1237,20 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
           </div>
         )}
 
-        {/* ================= TAB 3: RESEARCH INFORMATION (1000 × 500 TOPICS & AGENDA) ================= */}
+        {/* ================= TAB 3: RESEARCH INFORMATION (1000 × 500 VIDEO ONLY · YOUTUBE & GOOGLE DRIVE) ================= */}
         {activeVisualTab === 'information' && (
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
               <div>
                 <div className="text-xs text-[#6B1420] font-semibold flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Research Information Manager · 1000 × 500 Guidance Frame</span>
+                  <Film className="w-4 h-4 text-[#6B1420]" />
+                  <span>Research Information Video Manager · 1000 × 500 Dimensions · Video Only</span>
                 </div>
                 <h3 className="text-xl font-display font-semibold text-zinc-900 mt-0.5">
-                  Research Information Topics (Upload, Edit, Delete &amp; 1000 × 500 Sizing)
+                  Research Information Videos (YouTube, Google Drive &amp; Video Upload)
                 </h3>
                 <p className="text-xs text-zinc-600 mt-1">
-                  Manage the institutional guidelines, BERA priorities, and ethics information displayed in the 1000 by 500 Research Information frame on the Overview page.
+                  Upload video files or link videos from YouTube and Google Drive. These stream in the dedicated 1000 by 500 Research Information player on the Overview page.
                 </p>
               </div>
 
@@ -1230,7 +1261,7 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                   className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Add Information Topic (1000 × 500)</span>
+                  <span>Add Video to Research Information (1000 × 500)</span>
                 </button>
               </div>
             </div>
@@ -1242,16 +1273,22 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
               </div>
             )}
 
-            {/* Add / Edit Information Item Form (1000 x 500) */}
+            {/* Add / Edit Video Item Form (1000 x 500) */}
             {isInfoFormOpen && (
               <form
                 onSubmit={handleInfoFormSubmit}
                 className="p-5 bg-[#FAF9F5] border border-[#6B1420]/30 space-y-4"
               >
                 <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
-                  <h4 className="text-sm font-display font-semibold text-[#6B1420]">
-                    {editingInfoId ? 'Edit Research Information Topic' : 'Add New Research Information Topic'} (Size: 1000 × 500)
-                  </h4>
+                  <div className="flex items-center gap-2">
+                    <Video className="w-4 h-4 text-[#6B1420]" />
+                    <h4 className="text-sm font-display font-semibold text-[#6B1420]">
+                      {editingInfoId
+                        ? 'Edit Research Information Video'
+                        : 'Add New Research Information Video'}{' '}
+                      (Size: 1000 × 500 · Video Only)
+                    </h4>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setIsInfoFormOpen(false)}
@@ -1264,28 +1301,28 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-zinc-700 mb-1">
-                      Information Topic Title <span className="text-red-600">*</span>
+                      Video Topic Title <span className="text-red-600">*</span>
                     </label>
                     <input
                       type="text"
                       required
                       value={infoTitle}
                       onChange={(e) => setInfoTitle(e.target.value)}
-                      placeholder="e.g., Basic Education Research Agenda (BERA) Priorities"
+                      placeholder="e.g., BNHS Research Defense & TUKLAS Science Fair Orientation Video"
                       className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-medium text-zinc-700 mb-1">
-                      Category / Focus
+                      Category / Topic Focus
                     </label>
                     <input
                       type="text"
                       required
                       value={infoCategory}
                       onChange={(e) => setInfoCategory(e.target.value)}
-                      placeholder="e.g., DepEd Research Agenda"
+                      placeholder="e.g., DepEd BERA Video Briefing"
                       className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
                     />
                   </div>
@@ -1296,11 +1333,11 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                     Description &amp; Institutional Guidance <span className="text-red-600">*</span>
                   </label>
                   <textarea
-                    rows={4}
+                    rows={3}
                     required
                     value={infoDescription}
                     onChange={(e) => setInfoDescription(e.target.value)}
-                    placeholder="Enter policy overview, research steps, submission protocols, or ethics notes..."
+                    placeholder="Enter what this video covers: methodology orientation, research defense tips, ethics protocols, or school agenda..."
                     className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
                   />
                 </div>
@@ -1308,7 +1345,7 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-zinc-700 mb-1">
-                      Reference Web Link (Optional)
+                      External Reference Link (Optional)
                     </label>
                     <input
                       type="url"
@@ -1321,7 +1358,7 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-zinc-700 mb-1">
-                      Display Order
+                      Display Order (Video Sequence)
                     </label>
                     <input
                       type="number"
@@ -1334,78 +1371,125 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                   </div>
                 </div>
 
-                {/* Graphic / Photo Upload & 1000 x 500 Preview */}
+                {/* Video Upload & Link Controls (YouTube, Google Drive, or Local File) */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white border border-zinc-200 p-4">
+                  {/* Left Column: 1000 x 500 Video Preview Frame */}
                   <div className="md:col-span-6">
-                    <div className="w-full aspect-[1000/500] bg-zinc-900 border border-zinc-300 overflow-hidden flex items-center justify-center relative">
-                      {infoImageUrl ? (
-                        <img
-                          src={resolveOverviewImageLink(infoImageUrl)}
-                          alt="1000x500 Info Preview"
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                        />
+                    <div className="w-full aspect-[1000/500] bg-black border border-zinc-800 overflow-hidden flex items-center justify-center relative">
+                      {infoVideoUrl.trim() ? (
+                        (() => {
+                          const parsed = parseVideoSource(infoVideoUrl);
+                          if (parsed.isEmbeddableIframe) {
+                            return (
+                              <iframe
+                                src={parsed.embedUrl}
+                                title="Video Preview"
+                                className="w-full h-full border-0 bg-black"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                              />
+                            );
+                          }
+                          return (
+                            <video
+                              controls
+                              playsInline
+                              src={parsed.embedUrl}
+                              className="w-full h-full object-contain bg-black"
+                            >
+                              Your browser does not support HTML5 video.
+                            </video>
+                          );
+                        })()
                       ) : (
-                        <span className="text-xs text-zinc-400">
-                          1000 × 500 Graphic Preview Frame
-                        </span>
+                        <div className="flex flex-col items-center justify-center p-4 text-center text-zinc-400">
+                          <Film className="w-10 h-10 text-zinc-600 mb-2" />
+                          <span className="text-xs text-zinc-300 font-medium">
+                            1000 × 500 Video Preview Frame
+                          </span>
+                          <span className="text-[11px] text-zinc-500 mt-1">
+                            Paste a YouTube or Google Drive link, or upload an MP4 video file
+                          </span>
+                        </div>
                       )}
-                      <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/70 text-white font-mono text-[10px]">
+                      <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/80 text-white font-mono text-[10px] pointer-events-none">
                         1000 × 500
                       </div>
+                      {infoVideoSourceType && (
+                        <div className="absolute top-2 left-2 px-2 py-0.5 text-[10px] font-semibold text-white pointer-events-none uppercase">
+                          {infoVideoSourceType === 'youtube' && (
+                            <span className="bg-red-600 px-1.5 py-0.5 rounded-xs">
+                              YouTube Video
+                            </span>
+                          )}
+                          {infoVideoSourceType === 'drive' && (
+                            <span className="bg-blue-600 px-1.5 py-0.5 rounded-xs">
+                              Google Drive Video
+                            </span>
+                          )}
+                          {(infoVideoSourceType === 'upload' ||
+                            infoVideoSourceType === 'direct') && (
+                            <span className="bg-emerald-600 px-1.5 py-0.5 rounded-xs">
+                              MP4 Video
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  <div className="md:col-span-6 space-y-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-zinc-800 mb-1.5">
-                        Option 1: Upload Topic Graphic from Computer (Auto-scaled to 1000 × 500)
-                      </label>
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors">
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Upload &amp; Scale to 1000 × 500</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleInfoPhotoUpload}
-                            className="hidden"
-                          />
-                        </label>
-                        {infoImageUrl.startsWith('data:') && (
-                          <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1">
-                            Local Graphic Loaded (1000 × 500)
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-zinc-100">
-                      <label className="block text-xs font-semibold text-zinc-800 mb-1.5 flex items-center gap-1.5">
+                  {/* Right Column: YouTube / Google Drive Links + Local Video File Upload */}
+                  <div className="md:col-span-6 space-y-4">
+                    {/* Option 1: YouTube or Google Drive Video Link */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
                         <Globe className="w-3.5 h-3.5 text-[#6B1420]" />
-                        <span>Option 2: Photo via Google Drive or Web Link (1000 × 500)</span>
+                        <span>Option 1: Link on YouTube or Google Drive (Recommended)</span>
                       </label>
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                         <input
                           type="url"
-                          value={infoWebLinkInput}
-                          onChange={(e) => {
-                            setInfoWebLinkInput(e.target.value);
-                            setInfoImageUrl(resolveOverviewImageLink(e.target.value));
-                          }}
-                          placeholder="Paste Google Drive link or direct website image URL"
+                          value={infoVideoLinkInput}
+                          onChange={(e) => handleApplyVideoLink(e.target.value)}
+                          placeholder="Paste YouTube (https://youtu.be/... or watch?v=) or Google Drive link (https://drive.google.com/file/d/...)"
                           className="flex-1 px-3 py-2 text-xs border border-zinc-300 bg-[#FAF9F5] focus:outline-none focus:border-[#6B1420]"
                         />
                         <button
                           type="button"
-                          onClick={() => {
-                            setInfoImageUrl(resolveOverviewImageLink(infoWebLinkInput));
-                          }}
-                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors whitespace-nowrap shrink-0"
+                          onClick={() => handleApplyVideoLink(infoVideoLinkInput)}
+                          className="inline-flex items-center justify-center gap-1 px-3 py-2 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors whitespace-nowrap shrink-0"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Apply</span>
+                          <span>Apply Video Link</span>
                         </button>
+                      </div>
+                      <p className="text-[11px] text-zinc-500">
+                        Supports any YouTube video (watch, share, shorts) and Google Drive videos (set sharing to &ldquo;Anyone with link can view&rdquo;).
+                      </p>
+                    </div>
+
+                    {/* Option 2: Upload Video File from Computer */}
+                    <div className="pt-3 border-t border-zinc-100 space-y-1.5">
+                      <label className="block text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
+                        <Upload className="w-3.5 h-3.5 text-[#6B1420]" />
+                        <span>Option 2: Upload Video File from Computer (MP4, WebM, OGG)</span>
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors">
+                          <Film className="w-3.5 h-3.5" />
+                          <span>Choose Video File (.mp4, .webm)</span>
+                          <input
+                            type="file"
+                            accept="video/mp4,video/webm,video/ogg,video/*"
+                            onChange={handleInfoVideoUpload}
+                            className="hidden"
+                          />
+                        </label>
+                        {infoVideoSourceType === 'upload' && (
+                          <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1">
+                            Local Video Loaded
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1424,97 +1508,133 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                     disabled={savingInfo}
                     className="px-5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] disabled:opacity-50"
                   >
-                    {savingInfo ? 'Saving Information Topic...' : 'Save Topic (1000 × 500)'}
+                    {savingInfo ? 'Saving Video...' : 'Save Research Information Video (1000 × 500)'}
                   </button>
                 </div>
               </form>
             )}
 
-            {/* Information Items Grid */}
+            {/* Information Videos Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {informationItems.map((item, idx) => (
-                <div
-                  key={item.id}
-                  className="border border-zinc-200 bg-[#FAF9F5] flex flex-col justify-between overflow-hidden shadow-sm"
-                >
-                  <div>
-                    {/* Exact 1000 x 500 aspect ratio box */}
-                    <div className="w-full aspect-[1000/500] bg-zinc-900 relative overflow-hidden flex items-center justify-center">
-                      {item.imageUrl ? (
-                        <img
-                          src={resolveOverviewImageLink(item.imageUrl)}
-                          alt={item.title}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="text-center p-4 text-xs text-zinc-400">
-                          No Graphic Provided
+              {informationItems.map((item, idx) => {
+                const itemVideo = parseVideoSource(item.videoUrl || item.linkUrl || '');
+                return (
+                  <div
+                    key={item.id}
+                    className="border border-zinc-200 bg-[#FAF9F5] flex flex-col justify-between overflow-hidden shadow-sm"
+                  >
+                    <div>
+                      {/* Exact 1000 x 500 aspect ratio video container */}
+                      <div className="w-full aspect-[1000/500] bg-black relative overflow-hidden flex items-center justify-center">
+                        {itemVideo.type !== 'none' && itemVideo.embedUrl ? (
+                          itemVideo.isEmbeddableIframe ? (
+                            <iframe
+                              src={itemVideo.embedUrl}
+                              title={item.title}
+                              className="w-full h-full border-0 bg-black pointer-events-auto"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          ) : (
+                            <video
+                              controls
+                              playsInline
+                              src={itemVideo.embedUrl}
+                              className="w-full h-full object-contain bg-black"
+                            />
+                          )
+                        ) : (
+                          <div className="text-center p-4 text-xs text-zinc-400 flex flex-col items-center">
+                            <Film className="w-8 h-8 text-zinc-600 mb-1" />
+                            <span>No Video Uploaded</span>
+                          </div>
+                        )}
+                        <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#6B1420] text-white text-[10px] font-mono font-semibold pointer-events-none">
+                          Video {idx + 1} · {item.category}
                         </div>
+                        <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-black/75 text-white text-[10px] font-mono pointer-events-none">
+                          {itemVideo.type === 'youtube'
+                            ? 'YouTube'
+                            : itemVideo.type === 'drive'
+                            ? 'Google Drive'
+                            : '1000 × 500'}
+                        </div>
+                      </div>
+
+                      <div className="p-4 space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#6B1420]">
+                          <Video className="w-3.5 h-3.5 text-[#6B1420]" />
+                          <span>{item.category}</span>
+                        </div>
+                        <h4 className="text-sm font-display font-semibold text-zinc-900 line-clamp-1">
+                          {item.title}
+                        </h4>
+                        <p className="text-xs text-zinc-600 line-clamp-3">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditInfoItem(item)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit Video</span>
+                        </button>
+                        {itemVideo.originalUrl && (
+                          <a
+                            href={itemVideo.originalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 transition-colors"
+                            title="Open video URL in new tab"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+
+                      {confirmDeleteInfoId === item.id ? (
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (onDeleteInformationItem) {
+                                await onDeleteInformationItem(item.id);
+                                setConfirmDeleteInfoId(null);
+                                setInfoFeedback(`Deleted video topic "${item.title}".`);
+                              }
+                            }}
+                            className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteInfoId(null)}
+                            className="px-1.5 py-1 text-[11px] text-zinc-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteInfoId(item.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
                       )}
-                      <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#6B1420] text-white text-[10px] font-mono font-semibold">
-                        Topic {idx + 1} · {item.category}
-                      </div>
-                      <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-black/60 text-white text-[10px] font-mono">
-                        1000 × 500
-                      </div>
-                    </div>
-                    <div className="p-4 space-y-1.5">
-                      <h4 className="text-sm font-display font-semibold text-zinc-900 line-clamp-1">
-                        {item.title}
-                      </h4>
-                      <p className="text-xs text-zinc-600 line-clamp-3">
-                        {item.description}
-                      </p>
                     </div>
                   </div>
-
-                  <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => openEditInfoItem(item)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>Edit (1000 × 500)</span>
-                    </button>
-
-                    {confirmDeleteInfoId === item.id ? (
-                      <div className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (onDeleteInformationItem) {
-                              await onDeleteInformationItem(item.id);
-                              setConfirmDeleteInfoId(null);
-                              setInfoFeedback(`Deleted topic "${item.title}".`);
-                            }
-                          }}
-                          className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteInfoId(null)}
-                          className="px-1.5 py-1 text-[11px] text-zinc-600"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteInfoId(item.id)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

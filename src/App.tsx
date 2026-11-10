@@ -682,6 +682,10 @@ export default function App() {
             title: String(d.title || ''),
             category: String(d.category || ''),
             description: String(d.description || ''),
+            videoUrl: String(d.videoUrl || d.linkUrl || ''),
+            videoSourceType:
+              (d.videoSourceType as 'youtube' | 'drive' | 'direct' | 'upload') ||
+              'youtube',
             imageUrl: String(d.imageUrl || ''),
             linkUrl: String(d.linkUrl || ''),
             displayOrder: Number(d.displayOrder || 0),
@@ -1388,7 +1392,7 @@ export default function App() {
     showToast('Picture removed from Research Gallery.');
   };
 
-  // Research Information Handlers (1000 x 500 Topics)
+  // Research Information Video Handlers (1000 x 500 Videos - YouTube & Google Drive)
   const handleSaveInformationItem = async (
     payload: Omit<ResearchInformationItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>
   ) => {
@@ -1398,7 +1402,9 @@ export default function App() {
       ...payload,
       id: cleanId,
       portalId: 'bnhs',
-      imageUrl: resolveOverviewImageLink(payload.imageUrl || ''),
+      videoUrl: payload.videoUrl || '',
+      videoSourceType: payload.videoSourceType || 'youtube',
+      imageUrl: payload.imageUrl || '',
       createdAtIso: nowIso,
       updatedAtIso: nowIso,
     };
@@ -1416,6 +1422,8 @@ export default function App() {
           title: record.title.slice(0, 300),
           category: record.category.slice(0, 120),
           description: record.description.slice(0, 3000),
+          videoUrl: (record.videoUrl || '').slice(0, 750000),
+          videoSourceType: (record.videoSourceType || 'youtube').slice(0, 30),
           imageUrl: (record.imageUrl || '').slice(0, 750000),
           linkUrl: (record.linkUrl || '').slice(0, 500),
           displayOrder: record.displayOrder,
@@ -1427,6 +1435,8 @@ export default function App() {
           title: record.title.slice(0, 300),
           category: record.category.slice(0, 120),
           description: record.description.slice(0, 3000),
+          videoUrl: (record.videoUrl || '').slice(0, 750000),
+          videoSourceType: (record.videoSourceType || 'youtube').slice(0, 30),
           imageUrl: (record.imageUrl || '').slice(0, 750000),
           linkUrl: (record.linkUrl || '').slice(0, 500),
           displayOrder: record.displayOrder,
@@ -1437,7 +1447,7 @@ export default function App() {
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, docPath);
     }
-    showToast('Research Information topic (1000 × 500) saved to Cloud Database.');
+    showToast('Research Information video (1000 × 500) saved to Cloud Database.');
   };
 
   const handleDeleteInformationItem = async (itemId: string) => {
@@ -2057,7 +2067,7 @@ export default function App() {
       }
     }
 
-    // 6. Sync Research Information topics
+    // 6. Sync Research Information videos
     for (const info of activeInformationItems) {
       const cleanId = sanitizeId(info.id);
       try {
@@ -2066,6 +2076,8 @@ export default function App() {
           title: (info.title || '').slice(0, 300),
           category: (info.category || '').slice(0, 120),
           description: (info.description || '').slice(0, 3000),
+          videoUrl: (info.videoUrl || '').slice(0, 750000),
+          videoSourceType: (info.videoSourceType || 'youtube').slice(0, 30),
           imageUrl: (info.imageUrl || '').slice(0, 750000),
           linkUrl: (info.linkUrl || '').slice(0, 500),
           displayOrder: Number(info.displayOrder || 1),
