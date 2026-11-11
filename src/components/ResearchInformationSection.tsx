@@ -65,15 +65,6 @@ export const ResearchInformationSection: React.FC<ResearchInformationSectionProp
             <Video className="w-3.5 h-3.5 text-[#6B1420]" />
             <span>Video {activeIdx + 1} of {validItems.length}</span>
           </span>
-          {isAdmin && onOpenAdminManager && (
-            <button
-              type="button"
-              onClick={onOpenAdminManager}
-              className="px-2.5 py-1 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors"
-            >
-              Manage Videos in Admin
-            </button>
-          )}
         </div>
       </div>
 

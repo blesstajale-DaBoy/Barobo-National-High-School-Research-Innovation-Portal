@@ -106,15 +106,6 @@ export const ResearchGallerySection: React.FC<ResearchGallerySectionProps> = ({
           <span className="font-mono text-zinc-700 font-semibold">
             {currentIndex + 1} of {validItems.length}
           </span>
-          {isAdmin && onOpenAdminManager && (
-            <button
-              type="button"
-              onClick={onOpenAdminManager}
-              className="px-2.5 py-1 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors"
-            >
-              Manage Gallery in Admin
-            </button>
-          )}
         </div>
       </div>
 
