@@ -682,6 +682,125 @@
         }
       },
       "required": ["portalId", "title", "category", "description", "videoUrl", "videoSourceType", "imageUrl", "linkUrl", "displayOrder", "createdAt", "updatedAt"]
+    },
+    "PublishedJournalEntry": {
+      "title": "PublishedJournalEntry",
+      "description": "Published research journal manuscript in the Barobo National High School official published research library.",
+      "type": "object",
+      "properties": {
+        "portalId": {
+          "type": "string",
+          "enum": ["bnhs"],
+          "maxLength": 10
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "authors": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "authorAffiliation": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "division": {
+          "type": "string",
+          "enum": ["basic", "action", "tuklas", "interdisciplinary"],
+          "maxLength": 30
+        },
+        "journalVolume": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "issnOrRefCode": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "publicationDate": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "abstract": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 4000
+        },
+        "keywords": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "keyFindings": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "fileSourceType": {
+          "type": "string",
+          "enum": ["local", "drive"],
+          "maxLength": 20
+        },
+        "fileName": {
+          "type": "string",
+          "maxLength": 260
+        },
+        "fileSizeBytes": {
+          "type": "number"
+        },
+        "fileDataUrl": {
+          "type": "string",
+          "maxLength": 750000
+        },
+        "driveUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "driveEmbedUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "citationApa": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "viewsCount": {
+          "type": "number"
+        },
+        "downloadsCount": {
+          "type": "number"
+        },
+        "uploaderUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "portalId",
+        "title",
+        "authors",
+        "authorAffiliation",
+        "division",
+        "journalVolume",
+        "issnOrRefCode",
+        "publicationDate",
+        "abstract",
+        "keywords",
+        "fileSourceType",
+        "fileName",
+        "citationApa",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -724,6 +843,10 @@
     "/research_information/{infoId}": {
       "schema": { "$ref": "#/entities/ResearchInformationItem" },
       "description": "Research Information cards and guidance slides for the Overview page (1000x500)."
+    },
+    "/published_journals/{journalId}": {
+      "schema": { "$ref": "#/entities/PublishedJournalEntry" },
+      "description": "Official published research journal manuscripts and articles library."
     }
   }
 }

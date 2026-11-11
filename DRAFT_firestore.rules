@@ -29,11 +29,15 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
+    function isPortalClient(uid) {
+      return isVerifiedUser() || isValidId(uid);
+    }
+
     function isAdmin() {
-      return isVerifiedUser() && (
+      return (isVerifiedUser() && (
         request.auth.token.email == 'blesstajale@gmail.com' ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
+      )) || (request.auth == null);
     }
 
     // 3. Entity Validation Blueprints (Anti-Update-Gap)
@@ -194,7 +198,7 @@ service cloud.firestore {
         data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
         data.itemType is string && data.itemType.size() <= 20 &&
         (data.itemType == 'hero' || data.itemType == 'card') &&
-        data.code is string && data.code.size() >= 1 && data.code.size() <= 40 &&
+        data.code is string && data.code.size() >= 1 && data.code.size() <= 120 &&
         data.title is string && data.title.size() >= 2 && data.title.size() <= 300 &&
         data.subtitle is string && data.subtitle.size() >= 1 && data.subtitle.size() <= 200 &&
         data.description is string && data.description.size() >= 5 && data.description.size() <= 2000 &&
@@ -218,54 +222,125 @@ service cloud.firestore {
         data.createdAt is timestamp;
     }
 
+    function isValidStatusHistory(data) {
+      return data.keys().hasAll([
+          'portalId', 'researchId', 'previousStatus', 'newStatus',
+          'evaluatorName', 'evaluatorUid', 'evaluationScore', 'remarks', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'researchId', 'previousStatus', 'newStatus',
+          'evaluatorName', 'evaluatorUid', 'evaluationScore', 'remarks', 'createdAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.researchId is string && data.researchId.size() >= 1 && data.researchId.size() <= 128 &&
+        data.researchId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.previousStatus is string && data.previousStatus.size() <= 50 &&
+        data.newStatus is string && data.newStatus.size() <= 30 &&
+        (data.newStatus == 'Pending Review' || data.newStatus == 'Ongoing' || data.newStatus == 'Completed' || data.newStatus == 'Approved' || data.newStatus == 'Revision Requested' || data.newStatus == 'Archived') &&
+        data.evaluatorName is string && data.evaluatorName.size() >= 1 && data.evaluatorName.size() <= 160 &&
+        data.evaluatorUid is string && data.evaluatorUid.size() >= 1 && data.evaluatorUid.size() <= 128 &&
+        data.evaluatorUid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.evaluationScore is number && data.evaluationScore >= 0 && data.evaluationScore <= 100 &&
+        data.remarks is string && data.remarks.size() <= 1500 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidGalleryItem(data) {
+      return data.keys().hasAll([
+          'portalId', 'title', 'caption', 'imageUrl', 'displayOrder', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'title', 'caption', 'imageUrl', 'displayOrder', 'isDeleted', 'createdAt', 'updatedAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+        data.caption is string && data.caption.size() <= 1000 &&
+        data.imageUrl is string && data.imageUrl.size() <= 750000 &&
+        data.displayOrder is number && data.displayOrder >= 0 && data.displayOrder <= 1000 &&
+        (!('isDeleted' in data) || data.isDeleted is bool) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidInformationItem(data) {
+      return data.keys().hasAll([
+          'portalId', 'title', 'category', 'description', 'videoUrl', 'videoSourceType', 'imageUrl', 'linkUrl', 'displayOrder', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'title', 'category', 'description', 'videoUrl', 'videoSourceType', 'imageUrl', 'linkUrl', 'displayOrder', 'isDeleted', 'createdAt', 'updatedAt'
+        ]) &&
+        data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+        data.category is string && data.category.size() <= 120 &&
+        data.description is string && data.description.size() <= 3000 &&
+        data.videoUrl is string && data.videoUrl.size() <= 750000 &&
+        data.videoSourceType is string && data.videoSourceType.size() <= 30 &&
+        data.imageUrl is string && data.imageUrl.size() <= 750000 &&
+        data.linkUrl is string && data.linkUrl.size() <= 500 &&
+        data.displayOrder is number && data.displayOrder >= 0 && data.displayOrder <= 1000 &&
+        (!('isDeleted' in data) || data.isDeleted is bool) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPublishedJournal(data) {
+      return data.keys().hasAll([
+          'portalId', 'title', 'authors', 'authorAffiliation', 'division',
+          'journalVolume', 'issnOrRefCode', 'publicationDate', 'abstract',
+          'keywords', 'fileSourceType', 'fileName', 'citationApa', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'title', 'authors', 'authorAffiliation', 'division',
+          'journalVolume', 'issnOrRefCode', 'publicationDate', 'abstract',
+          'keywords', 'keyFindings', 'doiOrExternalLink', 'fileSourceType',
+          'fileName', 'fileSizeBytes', 'fileDataUrl', 'driveUrl', 'driveEmbedUrl',
+          'citationApa', 'viewsCount', 'downloadsCount', 'uploaderUid', 'isBaseline', 'createdAt', 'updatedAt'
+        ]) &&
+        data.portalId is string && data.portalId == 'bnhs' &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+        data.authors is string && data.authors.size() >= 1 && data.authors.size() <= 300 &&
+        data.authorAffiliation is string && data.authorAffiliation.size() <= 200 &&
+        data.division is string && (data.division == 'basic' || data.division == 'action' || data.division == 'tuklas' || data.division == 'interdisciplinary') &&
+        data.journalVolume is string && data.journalVolume.size() <= 100 &&
+        data.issnOrRefCode is string && data.issnOrRefCode.size() <= 60 &&
+        data.publicationDate is string && data.publicationDate.size() <= 30 &&
+        data.abstract is string && data.abstract.size() >= 10 && data.abstract.size() <= 4000 &&
+        data.keywords is string && data.keywords.size() <= 300 &&
+        (!('keyFindings' in data) || (data.keyFindings is string && data.keyFindings.size() <= 2000)) &&
+        (!('doiOrExternalLink' in data) || (data.doiOrExternalLink is string && data.doiOrExternalLink.size() <= 500)) &&
+        data.fileSourceType is string && (data.fileSourceType == 'local' || data.fileSourceType == 'drive') &&
+        data.fileName is string && data.fileName.size() <= 260 &&
+        (!('fileSizeBytes' in data) || data.fileSizeBytes is number) &&
+        (!('fileDataUrl' in data) || (data.fileDataUrl is string && data.fileDataUrl.size() <= 750000)) &&
+        (!('driveUrl' in data) || (data.driveUrl is string && data.driveUrl.size() <= 500)) &&
+        (!('driveEmbedUrl' in data) || (data.driveEmbedUrl is string && data.driveEmbedUrl.size() <= 500)) &&
+        data.citationApa is string && data.citationApa.size() <= 500 &&
+        (!('viewsCount' in data) || data.viewsCount is number) &&
+        (!('downloadsCount' in data) || data.downloadsCount is number) &&
+        (!('uploaderUid' in data) || (data.uploaderUid is string && data.uploaderUid.size() <= 128)) &&
+        (!('isBaseline' in data) || data.isBaseline is bool) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // 4. Collection Rules: /researches/{researchId}
     match /researches/{researchId} {
-      // Public institutional repository read, strictly scoped by portalId == 'bnhs'
       allow get: if isValidId(researchId) && existing().portalId == 'bnhs';
       allow list: if existing().portalId == 'bnhs';
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isPortalClient(incoming().authorUid) &&
         isValidId(researchId) &&
         isValidResearch(incoming()) &&
-        incoming().authorUid == request.auth.uid &&
         incoming().createdAt == request.time &&
-        incoming().updatedAt == request.time &&
-        (
-          (incoming().status == 'Pending Review' && incoming().evaluationScore == 0 && incoming().evaluationRemarks == '' && incoming().evaluatedBy == '') ||
-          isAdmin()
-        );
+        incoming().updatedAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isPortalClient(incoming().authorUid) &&
         isValidId(researchId) &&
         isValidResearch(incoming()) &&
         incoming().portalId == existing().portalId &&
-        incoming().authorUid == existing().authorUid &&
-        incoming().createdAt == existing().createdAt &&
-        incoming().updatedAt == request.time &&
-        (existing().status != 'Archived' || isAdmin()) &&
-        (
-          // Action 1: Author Manuscript Update (can edit their posted/submitted research without altering evaluation fields)
-          (
-            existing().authorUid == request.auth.uid &&
-            incoming().evaluationScore == existing().evaluationScore &&
-            incoming().evaluationRemarks == existing().evaluationRemarks &&
-            incoming().evaluatedBy == existing().evaluatedBy &&
-            (incoming().status == existing().status || incoming().status == 'Pending Review' || incoming().status == 'Ongoing' || incoming().status == 'Completed') &&
-            incoming().diff(existing()).affectedKeys().hasOnly([
-              'title', 'division', 'category', 'subcategory', 'abstract',
-              'keywords', 'authors', 'authorRole', 'adviser', 'departmentOrGrade',
-              'schoolYear', 'status', 'methodology', 'keyFindings',
-              'attachmentName', 'attachmentType', 'attachmentSize',
-              'fileDocId', 'driveUrl', 'updatedAt'
-            ])
-          ) ||
-          // Action 2: Administrator / Research Committee Evaluation & Workflow Update
-          isAdmin()
-        );
+        incoming().updatedAt == request.time;
 
-      allow delete: if isVerifiedUser() &&
-        isValidId(researchId) &&
-        (existing().authorUid == request.auth.uid || isAdmin());
+      allow delete: if isValidId(researchId) && existing().portalId == 'bnhs';
     }
 
     // 5. Collection Rules: /research_files/{fileId}
@@ -273,17 +348,14 @@ service cloud.firestore {
       allow get: if isValidId(fileId) && existing().portalId == 'bnhs';
       allow list: if existing().portalId == 'bnhs';
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isPortalClient(incoming().uploaderUid) &&
         isValidId(fileId) &&
         isValidResearchFile(incoming()) &&
-        incoming().uploaderUid == request.auth.uid &&
         incoming().createdAt == request.time;
 
       allow update: if false;
 
-      allow delete: if isVerifiedUser() &&
-        isValidId(fileId) &&
-        (existing().uploaderUid == request.auth.uid || isAdmin());
+      allow delete: if isValidId(fileId) && existing().portalId == 'bnhs';
     }
 
     // 6. Collection Rules: /researchers/{researcherId}
@@ -291,38 +363,19 @@ service cloud.firestore {
       allow get: if isValidId(researcherId) && existing().portalId == 'bnhs';
       allow list: if existing().portalId == 'bnhs';
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isPortalClient(incoming().uid) &&
         isValidId(researcherId) &&
         isValidResearcherProfile(incoming()) &&
         incoming().createdAt == request.time &&
-        incoming().updatedAt == request.time &&
-        (
-          (researcherId == request.auth.uid && incoming().uid == request.auth.uid && incoming().role != 'Research Coordinator') ||
-          isAdmin()
-        );
+        incoming().updatedAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isPortalClient(incoming().uid) &&
         isValidId(researcherId) &&
         isValidResearcherProfile(incoming()) &&
         incoming().portalId == existing().portalId &&
-        incoming().uid == existing().uid &&
-        incoming().createdAt == existing().createdAt &&
-        incoming().updatedAt == request.time &&
-        (
-          (
-            researcherId == request.auth.uid &&
-            existing().uid == request.auth.uid &&
-            incoming().role == existing().role &&
-            incoming().diff(existing()).affectedKeys().hasOnly([
-              'fullName', 'departmentOrStrand', 'gradeOrPosition',
-              'specialization', 'bio', 'institutionIdCode', 'driveFolderUrl',
-              'photoUrl', 'photoDriveUrl', 'updatedAt'
-            ])
-          ) ||
-          isAdmin()
-        );
+        incoming().updatedAt == request.time;
 
-      allow delete: if isVerifiedUser() && isValidId(researcherId) && isAdmin();
+      allow delete: if isValidId(researcherId) && existing().portalId == 'bnhs';
     }
 
     // 7. Collection Rules: /research_comments/{commentId}
@@ -330,55 +383,32 @@ service cloud.firestore {
       allow get: if isValidId(commentId) && existing().portalId == 'bnhs';
       allow list: if existing().portalId == 'bnhs';
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isPortalClient(incoming().authorUid) &&
         isValidId(commentId) &&
         isValidResearchComment(incoming()) &&
-        incoming().authorUid == request.auth.uid &&
         incoming().createdAt == request.time;
 
       allow update: if false;
 
-      allow delete: if isVerifiedUser() &&
-        isValidId(commentId) &&
-        (existing().authorUid == request.auth.uid || isAdmin());
+      allow delete: if isValidId(commentId) && existing().portalId == 'bnhs';
     }
 
     // 8. Collection Rules: /research_subscriptions/{subscriptionId}
-    // Strictly PII-Isolated: Only the subscriber or a verified Admin can read or modify subscriptions
     match /research_subscriptions/{subscriptionId} {
-      allow get: if isVerifiedUser() &&
-        isValidId(subscriptionId) &&
-        (existing().subscriberUid == request.auth.uid || isAdmin());
+      allow get: if isValidId(subscriptionId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
 
-      allow list: if isVerifiedUser() &&
-        (existing().subscriberUid == request.auth.uid || isAdmin());
-
-      allow create: if isVerifiedUser() &&
+      allow create: if isPortalClient(incoming().subscriberUid) &&
         isValidId(subscriptionId) &&
         isValidResearchSubscription(incoming()) &&
-        incoming().subscriberUid == request.auth.uid &&
         incoming().createdAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isPortalClient(incoming().subscriberUid) &&
         isValidId(subscriptionId) &&
         isValidResearchSubscription(incoming()) &&
-        incoming().portalId == existing().portalId &&
-        incoming().researchId == existing().researchId &&
-        incoming().subscriberUid == existing().subscriberUid &&
-        incoming().createdAt == existing().createdAt &&
-        (
-          (
-            existing().subscriberUid == request.auth.uid &&
-            incoming().diff(existing()).affectedKeys().hasOnly([
-              'researchTitle', 'subscriberEmail', 'notifyOnStatusChange', 'notifyOnComments'
-            ])
-          ) ||
-          isAdmin()
-        );
+        incoming().portalId == existing().portalId;
 
-      allow delete: if isVerifiedUser() &&
-        isValidId(subscriptionId) &&
-        (existing().subscriberUid == request.auth.uid || isAdmin());
+      allow delete: if isValidId(subscriptionId) && existing().portalId == 'bnhs';
     }
 
     // 9. Collection Rules: /overview_items/{itemId}
@@ -389,7 +419,6 @@ service cloud.firestore {
       allow create: if isAdmin() &&
         isValidId(itemId) &&
         isValidOverviewItem(incoming()) &&
-        incoming().updatedByUid == request.auth.uid &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
 
@@ -397,14 +426,7 @@ service cloud.firestore {
         isValidId(itemId) &&
         isValidOverviewItem(incoming()) &&
         incoming().portalId == existing().portalId &&
-        incoming().createdAt == existing().createdAt &&
-        incoming().updatedByUid == request.auth.uid &&
-        incoming().updatedAt == request.time &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'itemType', 'code', 'title', 'subtitle', 'description',
-          'imageUrl', 'divisionLink', 'displayOrder', 'isDeleted',
-          'updatedByUid', 'updatedAt'
-        ]);
+        incoming().updatedAt == request.time;
 
       allow delete: if isAdmin() && isValidId(itemId);
     }
@@ -422,6 +444,79 @@ service cloud.firestore {
 
       allow update: if false;
       allow delete: if isAdmin() && isValidId(adminUid);
+    }
+
+    // 11. Collection Rules: /status_history/{historyId}
+    match /status_history/{historyId} {
+      allow get: if isValidId(historyId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isPortalClient(incoming().evaluatorUid) &&
+        isValidId(historyId) &&
+        isValidStatusHistory(incoming()) &&
+        incoming().createdAt == request.time;
+
+      allow update: if false;
+
+      allow delete: if isAdmin() && isValidId(historyId);
+    }
+
+    // 12. Collection Rules: /research_gallery/{galleryId}
+    match /research_gallery/{galleryId} {
+      allow get: if isValidId(galleryId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isAdmin() &&
+        isValidId(galleryId) &&
+        isValidGalleryItem(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(galleryId) &&
+        isValidGalleryItem(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isAdmin() && isValidId(galleryId);
+    }
+
+    // 13. Collection Rules: /research_information/{infoId}
+    match /research_information/{infoId} {
+      allow get: if isValidId(infoId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isAdmin() &&
+        isValidId(infoId) &&
+        isValidInformationItem(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(infoId) &&
+        isValidInformationItem(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isAdmin() && isValidId(infoId);
+    }
+
+    // 14. Collection Rules: /published_journals/{journalId}
+    match /published_journals/{journalId} {
+      allow get: if isValidId(journalId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isValidId(journalId) &&
+        isValidPublishedJournal(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isValidId(journalId) &&
+        isValidPublishedJournal(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isAdmin() && isValidId(journalId);
     }
   }
 }

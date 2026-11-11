@@ -1387,4 +1387,225 @@ export const INITIAL_RESEARCH_INFORMATION: ResearchInformationItemRecord[] = [
   },
 ];
 
+// ============================================================================
+// PUBLISHED RESEARCH JOURNAL (OFFICIAL PUBLISHED RESEARCH LIBRARY)
+// ============================================================================
+
+export type JournalDivisionType = 'basic' | 'action' | 'tuklas' | 'interdisciplinary';
+
+export interface PublishedJournalRecord {
+  id: string;
+  portalId: 'bnhs';
+  title: string;
+  authors: string;
+  authorAffiliation: string;
+  division: JournalDivisionType;
+  journalVolume: string; // e.g. "Volume 4, Issue 1 (SY 2025–2026)"
+  issnOrRefCode: string; // e.g. "BNHS-JRNL-2026-001"
+  publicationDate: string; // e.g. "2026-02-15"
+  abstract: string;
+  keywords: string;
+  keyFindings: string;
+  doiOrExternalLink?: string;
+  fileSourceType: 'local' | 'drive' | 'link';
+  fileName: string;
+  fileSizeBytes?: number;
+  fileDataUrl?: string;
+  driveUrl?: string;
+  driveEmbedUrl?: string;
+  publishedLinkUrl?: string;
+  publishedVenue?: string;
+  citationApa: string;
+  viewsCount: number;
+  downloadsCount: number;
+  uploaderUid?: string;
+  createdAtIso: string;
+  updatedAtIso: string;
+  isBaseline?: boolean;
+}
+
+export const INITIAL_PUBLISHED_JOURNALS: PublishedJournalRecord[] = [
+  {
+    id: 'journal_01',
+    portalId: 'bnhs',
+    title: 'Community Marine Sanctuary Assessment in Barobo Bay: Coral Reef Biodiversity, Live Coral Cover, and Fish Density Metrics',
+    authors: 'Maria Clara Santos, MST, John Paul Dela Cruz, Bryan Alcantara',
+    authorAffiliation: 'Science Department & Senior High School STEM Faculty',
+    division: 'basic',
+    journalVolume: 'Volume 4, Issue 1 (SY 2025–2026)',
+    issnOrRefCode: 'BNHS-JRNL-2026-001',
+    publicationDate: '2026-02-10',
+    abstract: 'This empirical investigation assesses the benthic composition, live coral cover (LCC), and reef fish density inside and outside the established Marine Protected Areas (MPAs) across Barobo Bay, Surigao del Sur. Utilizing line intercept transect (LIT) methodologies combined with underwater visual fish census (UVC) over three quarterly monitoring rounds, the findings revealed a mean live coral cover of 54.2% within protected zones compared to 28.6% in unprotected coastal waters. Fish biomass was significantly higher in community-patrolled sanctuary boundaries (p < 0.01). The study offers evidence-based policy inputs for the Barobo Municipal Agriculture Office and coastal barangay councils to bolster local marine conservation enforcement.',
+    keywords: 'Marine Sanctuary, Coral Reef Biodiversity, Fish Density, Barobo Bay, Surigao del Sur, Line Intercept Transect',
+    keyFindings: 'Live coral cover inside community sanctuaries reached 54.2% with a 3.1-fold higher fish biomass compared to adjacent non-sanctuary coastal zones. Community-led monitoring significantly reduced destructive fishing incursions.',
+    doiOrExternalLink: 'https://drive.google.com/drive/folders/1bnhs-basic-stem-readiness',
+    fileSourceType: 'drive',
+    fileName: 'Santos_et_al_Barobo_Marine_Sanctuary_2026.pdf',
+    fileSizeBytes: 1845000,
+    driveUrl: 'https://drive.google.com/file/d/1B_BNHS_Marine_Sanctuary_Assessment_2026/view?usp=sharing',
+    driveEmbedUrl: 'https://drive.google.com/file/d/1B_BNHS_Marine_Sanctuary_Assessment_2026/preview',
+    citationApa: 'Santos, M. C., Dela Cruz, J. P., & Alcantara, B. (2026). Community Marine Sanctuary Assessment in Barobo Bay: Coral Reef Biodiversity, Live Coral Cover, and Fish Density Metrics. Barobo National High School Research Journal, 4(1), 12–28.',
+    viewsCount: 248,
+    downloadsCount: 89,
+    createdAtIso: '2026-02-10T08:00:00.000Z',
+    updatedAtIso: '2026-02-10T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'journal_02',
+    portalId: 'bnhs',
+    title: 'Gamified Formative Interventions in Senior High School Pre-Calculus: Evaluating Spatial Reasoning and Academic Resilience',
+    authors: 'Rolando M. Tejada, PhD, Christine Joy Villamor, LPT',
+    authorAffiliation: 'Mathematics Department',
+    division: 'action',
+    journalVolume: 'Volume 4, Issue 1 (SY 2025–2026)',
+    issnOrRefCode: 'BNHS-JRNL-2026-002',
+    publicationDate: '2026-02-18',
+    abstract: 'Addressing persistent difficulties in conic sections and trigonometric identities among Grade 11 STEM learners at Barobo National High School, this action research evaluated the effectiveness of a gamified formative intervention framework. Utilizing a quasi-experimental pretest-posttest control group design (N = 84), the experimental cohort received daily 15-minute micro-gamified geometric visualization challenges. Results indicated statistically significant normalized learning gains (g = 0.68) compared to the conventional instructional cohort (g = 0.32, t = 4.82, p < 0.001). Qualitative learner debriefings demonstrated marked enhancements in self-efficacy and mathematical anxiety reduction.',
+    keywords: 'Gamified Learning, Pre-Calculus, Spatial Reasoning, Action Research, STEM Pedagogy, Formative Assessment',
+    keyFindings: 'Normalized learning gains in conic section comprehension reached 0.68 in the gamified group versus 0.32 in conventional instruction. Math test anxiety decreased by 27.4% on standard self-efficacy scales.',
+    doiOrExternalLink: 'https://drive.google.com/drive/folders/1bnhs-action-theme1-sikat',
+    fileSourceType: 'local',
+    fileName: 'Tejada_Villamor_PreCalculus_Gamification_2026.pdf',
+    fileSizeBytes: 924000,
+    fileDataUrl: '',
+    citationApa: 'Tejada, R. M., & Villamor, C. J. (2026). Gamified Formative Interventions in Senior High School Pre-Calculus: Evaluating Spatial Reasoning and Academic Resilience. Barobo National High School Research Journal, 4(1), 29–44.',
+    viewsCount: 312,
+    downloadsCount: 145,
+    createdAtIso: '2026-02-18T08:00:00.000Z',
+    updatedAtIso: '2026-02-18T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'journal_03',
+    portalId: 'bnhs',
+    title: 'Solar-Powered Water Salinity Desalination and Microplastic Filtration Prototype for Coastal Households in Barangay Dapdap',
+    authors: 'Andrea Nicole Fernandez, Kevin Mark Espina (Lead Student Proponents); Engr. Manuel Prado (Adviser)',
+    authorAffiliation: 'Special Science Program (SSP) & Grade 12 STEM Proponents',
+    division: 'tuklas',
+    journalVolume: 'Volume 4, Issue 1 (SY 2025–2026)',
+    issnOrRefCode: 'BNHS-JRNL-2026-003',
+    publicationDate: '2026-02-25',
+    abstract: 'This scientific innovation study presents the design, fabrication, and performance testing of a multi-stage portable solar thermal desalination system integrated with layered activated coconut charcoal and microfiber filtration cartridges. Developed specifically for off-grid coastal families in Barangay Dapdap, Barobo, the unit processes 12.5 liters of brackish coastal groundwater per 8-hour sunlight cycle. Laboratory salinity tests showed Total Dissolved Solids (TDS) reduction from 14,200 ppm down to 180 ppm (well within PNSDW drinking standards), while microplastic retention exceeded 96.8%. The low fabrication cost of PHP 3,450 makes it a viable emergency potable water solution.',
+    keywords: 'Solar Desalination, Microplastic Filtration, Coastal Resilience, TUKLAS Innovation Expo, Water Potability, Barangay Dapdap',
+    keyFindings: 'TDS lowered from 14,200 ppm to 180 ppm with 96.8% microplastic particulate capture. The prototype produces 12.5L of potable drinking water daily at zero operational electricity cost.',
+    doiOrExternalLink: 'https://drive.google.com/drive/folders/1bnhs-tuklas-ps-musselshell',
+    fileSourceType: 'drive',
+    fileName: 'Fernandez_Espina_Solar_Desalination_TUKLAS_2026.pdf',
+    fileSizeBytes: 2450000,
+    driveUrl: 'https://drive.google.com/file/d/1C_Solar_Desalination_Microplastic_BNHS_2026/view?usp=sharing',
+    driveEmbedUrl: 'https://drive.google.com/file/d/1C_Solar_Desalination_Microplastic_BNHS_2026/preview',
+    citationApa: 'Fernandez, A. N., Espina, K. M., & Prado, M. (2026). Solar-Powered Water Salinity Desalination and Microplastic Filtration Prototype for Coastal Households in Barangay Dapdap. Barobo National High School Research Journal, 4(1), 45–61.',
+    viewsCount: 420,
+    downloadsCount: 198,
+    createdAtIso: '2026-02-25T08:00:00.000Z',
+    updatedAtIso: '2026-02-25T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'journal_04',
+    portalId: 'bnhs',
+    title: 'Socio-Economic Dimensions of Fisherfolk Household Food Security in Coastal Barangays of Barobo: A Mixed-Methods Baseline',
+    authors: 'Grace Ann Montante, MAEd, Vicente P. Lumapas',
+    authorAffiliation: 'Social Studies & Governance Department',
+    division: 'basic',
+    journalVolume: 'Volume 3, Issue 2 (SY 2024–2025)',
+    issnOrRefCode: 'BNHS-JRNL-2025-014',
+    publicationDate: '2025-11-20',
+    abstract: 'Through a convergent parallel mixed-methods design, this research examined household food security indicators across 160 artisanal fisherfolk families in coastal barangays of Barobo (Amaga, Dapdap, Poblacion, and Wawa). Utilizing the Household Food Insecurity Access Scale (HFIAS) alongside focus group discussions during monsoon and lean fishing seasons, 62.5% of households experienced moderate to severe food insecurity during prolonged weather disturbances. Educational attainment of household heads and access to cooperative micro-credit showed strong positive correlation with dietary diversity scores (r = 0.51, p < 0.01). Institutional recommendations highlight community fish processing value-addition and school-based targeted feeding for fisherfolk learners.',
+    keywords: 'Fisherfolk Households, Coastal Livelihood, Food Security Index, Basic Research, Surigao del Sur, Household Vulnerability',
+    keyFindings: 'Moderate to severe seasonal food insecurity affected 62.5% of artisanal fisherfolk families during monsoon periods. Cooperative micro-credit and value-added fish processing buffered household nutrition by 34%.',
+    doiOrExternalLink: 'https://drive.google.com/drive/folders/1bnhs-coastal-learner-profile',
+    fileSourceType: 'drive',
+    fileName: 'Montante_Lumapas_Fisherfolk_Food_Security_2025.pdf',
+    fileSizeBytes: 1320000,
+    driveUrl: 'https://drive.google.com/file/d/1D_Fisherfolk_Food_Security_Barobo_2025/view?usp=sharing',
+    driveEmbedUrl: 'https://drive.google.com/file/d/1D_Fisherfolk_Food_Security_Barobo_2025/preview',
+    citationApa: 'Montante, G. A., & Lumapas, V. P. (2025). Socio-Economic Dimensions of Fisherfolk Household Food Security in Coastal Barangays of Barobo: A Mixed-Methods Baseline. Barobo National High School Research Journal, 3(2), 77–93.',
+    viewsCount: 195,
+    downloadsCount: 72,
+    createdAtIso: '2025-11-20T08:00:00.000Z',
+    updatedAtIso: '2025-11-20T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'journal_05',
+    portalId: 'bnhs',
+    title: 'Sinugbuanong Binisaya and English Dual-Language Science Lexicon: Enhancing Grade 8 Cell Biology Mastery',
+    authors: 'Leah Theresa M. Balcita, Master Teacher I',
+    authorAffiliation: 'Junior High School Science Department',
+    division: 'action',
+    journalVolume: 'Volume 3, Issue 2 (SY 2024–2025)',
+    issnOrRefCode: 'BNHS-JRNL-2025-015',
+    publicationDate: '2025-12-05',
+    abstract: 'This practitioner inquiry examined the pedagogical impact of an indigenous Sinugbuanong Binisaya–English contextualized science terminology glossing guide on Grade 8 students (N = 65) studying cellular organelles and transport mechanisms. Over a 6-week instructional intervention, students who utilized the dual-language lexicon demonstrated a 31.8% higher diagnostic retention score on abstract biological concepts compared to historical baselines. Qualitative analysis of learner reflective journals revealed that bridging vernacular terminology lowered cognitive barrier anxieties and encouraged active oral classroom recitation among rural learners.',
+    keywords: 'Dual-Language Pedagogy, Mother Tongue Integration, Cell Biology, Science Achievement, Action Research, Contextualized Learning',
+    keyFindings: 'Retentive mastery of cellular biology concepts increased by 31.8%. Vernacular contextualization eliminated student hesitation in asking clarifying questions during laboratory inquiry.',
+    doiOrExternalLink: 'https://drive.google.com/drive/folders/1bnhs-action-theme3-lac',
+    fileSourceType: 'local',
+    fileName: 'Balcita_Dual_Language_Science_Lexicon_2025.pdf',
+    fileSizeBytes: 840000,
+    fileDataUrl: '',
+    citationApa: 'Balcita, L. T. M. (2025). Sinugbuanong Binisaya and English Dual-Language Science Lexicon: Enhancing Grade 8 Cell Biology Mastery. Barobo National High School Research Journal, 3(2), 94–108.',
+    viewsCount: 280,
+    downloadsCount: 110,
+    createdAtIso: '2025-12-05T08:00:00.000Z',
+    updatedAtIso: '2025-12-05T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'journal_06',
+    portalId: 'bnhs',
+    title: 'Interdisciplinary STEAM Inquiry: Computational Ecological Modeling of Estuarine Water Quality Along the Wawa River System',
+    authors: 'Mark Anthony B. Gomez, LPT, Patricia Mae Torralba',
+    authorAffiliation: 'Senior High School STEM & TVL Department',
+    division: 'interdisciplinary',
+    journalVolume: 'Volume 4, Issue 1 (SY 2025–2026)',
+    issnOrRefCode: 'BNHS-JRNL-2026-004',
+    publicationDate: '2026-03-01',
+    abstract: 'Integrating chemistry, environmental science, and computer programming, this interdisciplinary study modeled seasonal fluctuations of dissolved oxygen (DO), biological oxygen demand (BOD), and nitrate concentrations along 5 key sampling stations of the Wawa River estuarine corridor in Barobo. Senior high school researchers gathered water samples across tidal cycles and developed a predictive Python-based simulation modeling pollutant dispersion. The findings established critical threshold alerts for upstream agricultural runoff during heavy rainfall and provided a replicable computational curriculum module for secondary STEAM education.',
+    keywords: 'Water Quality Index, Wawa River, Estuarine Ecology, Interdisciplinary STEAM, Python Simulation, Agricultural Runoff',
+    keyFindings: 'Predictive computational modeling accurately correlated heavy upstream precipitation with transient hypoxia (DO < 3.0 mg/L) in estuarine nursery areas. Simulation was successfully piloted in Grade 12 STEM classes.',
+    doiOrExternalLink: 'https://drive.google.com/drive/folders/1bnhs-tuklas-mcs-evacuation',
+    fileSourceType: 'drive',
+    fileName: 'Gomez_Torralba_Wawa_River_STEAM_2026.pdf',
+    fileSizeBytes: 2100000,
+    driveUrl: 'https://drive.google.com/file/d/1E_Wawa_River_Water_Quality_STEAM_2026/view?usp=sharing',
+    driveEmbedUrl: 'https://drive.google.com/file/d/1E_Wawa_River_Water_Quality_STEAM_2026/preview',
+    citationApa: 'Gomez, M. A. B., & Torralba, P. M. (2026). Computational Ecological Modeling of Estuarine Water Quality Along the Wawa River System. Barobo National High School Research Journal, 4(1), 62–80.',
+    viewsCount: 360,
+    downloadsCount: 162,
+    createdAtIso: '2026-03-01T08:00:00.000Z',
+    updatedAtIso: '2026-03-01T08:00:00.000Z',
+    isBaseline: true,
+  },
+  {
+    id: 'journal_07',
+    portalId: 'bnhs',
+    title: 'Digital Literacy Matrix and Action Inquiry in Multigrade Public Secondary Schools: A Division-Wide Assessment',
+    authors: 'Dr. Evelyn C. Manlapaz, EdD, Rowena T. Alingalan, MT-II',
+    authorAffiliation: 'DepEd Surigao del Sur Curriculum Implementation Division (CID) & BNHS Research Hub',
+    division: 'basic',
+    journalVolume: 'Volume 4, Issue 1 (SY 2025–2026)',
+    issnOrRefCode: 'BNHS-EXT-2026-007',
+    publicationDate: '2026-03-10',
+    abstract: 'This externally published division study evaluates the ICT integration readiness and digital pedagogy proficiency of secondary educators across coastal and rural schools in the Schools Division of Surigao del Sur. Grounded in the TPACK (Technological Pedagogical Content Knowledge) model, survey data from 412 teacher-respondents were analyzed using descriptive-correlational statistics. Results indicated high technological familiarity but moderate pedagogical integration in high-order STEM lessons. Key policy recommendations include school-based digital Learning Action Cells (LAC) and modular offline LMS caching servers.',
+    keywords: 'Digital Literacy, TPACK Framework, Multigrade Secondary Schools, Division-Wide Assessment, Educational Technology, DepEd Caraga',
+    keyFindings: 'Teacher respondents scored 3.82/5.00 in basic digital tool operation but 2.94/5.00 in higher-order inquiry-based software integration. Offline LMS caching eliminated connectivity disruptions in coastal barangays.',
+    doiOrExternalLink: 'https://drive.google.com/file/d/1G_Digital_Literacy_DepEd_Caraga_2026/view?usp=sharing',
+    fileSourceType: 'link',
+    fileName: 'Manlapaz_Alingalan_Digital_Literacy_Division_2026.pdf',
+    publishedLinkUrl: 'https://drive.google.com/file/d/1G_Digital_Literacy_DepEd_Caraga_2026/view?usp=sharing',
+    publishedVenue: 'DepEd Caraga Regional Research Compendium & BERA Repository',
+    driveUrl: 'https://drive.google.com/file/d/1G_Digital_Literacy_DepEd_Caraga_2026/view?usp=sharing',
+    driveEmbedUrl: 'https://drive.google.com/file/d/1G_Digital_Literacy_DepEd_Caraga_2026/preview',
+    citationApa: 'Manlapaz, E. C., & Alingalan, R. T. (2026). Digital Literacy Matrix and Action Inquiry in Multigrade Public Secondary Schools: A Division-Wide Assessment. DepEd Caraga Regional Research Compendium, 5(1), 45–63.',
+    viewsCount: 412,
+    downloadsCount: 189,
+    createdAtIso: '2026-03-10T08:00:00.000Z',
+    updatedAtIso: '2026-03-10T08:00:00.000Z',
+    isBaseline: true,
+  },
+];
+
 

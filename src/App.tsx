@@ -75,6 +75,9 @@ import {
   INITIAL_OVERVIEW_ITEMS,
   INITIAL_RESEARCH_GALLERY,
   INITIAL_RESEARCH_INFORMATION,
+  PublishedJournalRecord,
+  JournalDivisionType,
+  INITIAL_PUBLISHED_JOURNALS,
   PORTAL_IMAGES,
   getCategoriesForDivision,
 } from './data/bnhsTaxonomy';
@@ -102,12 +105,14 @@ import {
   BnhsPortalLoginModal,
   BnhsPortalUserSession,
 } from './components/BnhsPortalLoginModal';
+import { ResearchJournalView } from './components/ResearchJournalView';
 
 type ActiveSection =
   | 'overview'
   | 'basic'
   | 'action'
   | 'tuklas'
+  | 'journal'
   | 'directory';
 
 const LOCAL_SUBSCRIPTIONS_KEY = 'bnhs_notify_subscriptions_v1';
@@ -123,6 +128,8 @@ const LOCAL_COMMENTS_KEY = 'bnhs_local_comments_v1';
 const LOCAL_PROFILES_KEY = 'bnhs_local_profiles_v1';
 const LOCAL_DELETED_PROFILE_IDS_KEY = 'bnhs_deleted_profile_ids_v1';
 const LOCAL_PORTAL_SESSION_KEY = 'bnhs_portal_user_session_v1';
+const LOCAL_PUBLISHED_JOURNALS_KEY = 'bnhs_published_journals_v1';
+const LOCAL_DELETED_JOURNAL_IDS_KEY = 'bnhs_deleted_journal_ids_v1';
 
 export default function App() {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -145,6 +152,7 @@ export default function App() {
   const [cloudOverviewItems, setCloudOverviewItems] = useState<OverviewItemRecord[]>([]);
   const [cloudGalleryItems, setCloudGalleryItems] = useState<ResearchGalleryItemRecord[]>([]);
   const [cloudInformationItems, setCloudInformationItems] = useState<ResearchInformationItemRecord[]>([]);
+  const [cloudJournals, setCloudJournals] = useState<PublishedJournalRecord[]>([]);
   const [loadingData, setLoadingData] = useState<boolean>(false);
   const [initialCloudLoaded, setInitialCloudLoaded] = useState<boolean>(false);
   const hasMountedRef = useRef<boolean>(false);
@@ -249,6 +257,22 @@ export default function App() {
   const [deletedProfileIds, setDeletedProfileIds] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(LOCAL_DELETED_PROFILE_IDS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [localJournals, setLocalJournals] = useState<PublishedJournalRecord[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_PUBLISHED_JOURNALS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [deletedJournalIds, setDeletedJournalIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_DELETED_JOURNAL_IDS_KEY);
       return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
@@ -773,6 +797,57 @@ export default function App() {
       }
     );
 
+    const jrnlPath = 'published_journals';
+    const qJrnl = query(
+      collection(db, jrnlPath),
+      where('portalId', '==', 'bnhs')
+    );
+
+    const unsubJournals = onSnapshot(
+      qJrnl,
+      (snapshot) => {
+        const list: PublishedJournalRecord[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          return {
+            id: docSnap.id,
+            portalId: 'bnhs',
+            title: String(d.title || ''),
+            authors: String(d.authors || ''),
+            authorAffiliation: String(d.authorAffiliation || ''),
+            division: (d.division as JournalDivisionType) || 'basic',
+            journalVolume: String(d.journalVolume || ''),
+            issnOrRefCode: String(d.issnOrRefCode || ''),
+            publicationDate: String(d.publicationDate || ''),
+            abstract: String(d.abstract || ''),
+            keywords: String(d.keywords || ''),
+            keyFindings: String(d.keyFindings || ''),
+            doiOrExternalLink: String(d.doiOrExternalLink || ''),
+            fileSourceType: (d.fileSourceType as 'local' | 'drive') || 'drive',
+            fileName: String(d.fileName || ''),
+            fileSizeBytes: Number(d.fileSizeBytes || 0),
+            fileDataUrl: String(d.fileDataUrl || ''),
+            driveUrl: String(d.driveUrl || ''),
+            driveEmbedUrl: String(d.driveEmbedUrl || ''),
+            citationApa: String(d.citationApa || ''),
+            viewsCount: Number(d.viewsCount || 0),
+            downloadsCount: Number(d.downloadsCount || 0),
+            uploaderUid: String(d.uploaderUid || ''),
+            createdAtIso: d.createdAt?.toDate
+              ? d.createdAt.toDate().toISOString()
+              : new Date().toISOString(),
+            updatedAtIso: d.updatedAt?.toDate
+              ? d.updatedAt.toDate().toISOString()
+              : new Date().toISOString(),
+            isBaseline: Boolean(d.isBaseline),
+          };
+        });
+        setCloudJournals(list);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, jrnlPath);
+      }
+    );
+
     return () => {
       unsubResearches();
       unsubResearchers();
@@ -780,6 +855,7 @@ export default function App() {
       unsubOverview();
       unsubGallery();
       unsubInfo();
+      unsubJournals();
     };
   }, []);
 
@@ -1098,6 +1174,36 @@ export default function App() {
       .filter((inf) => !inf.isDeleted && !deletedSet.has(inf.id))
       .sort((a, b) => a.displayOrder - b.displayOrder);
   }, [cloudInformationItems, localInformationItems, deletedInformationIds]);
+
+  const activePublishedJournals = useMemo(() => {
+    const deletedSet = new Set(deletedJournalIds);
+    const map = new Map<string, PublishedJournalRecord>();
+    INITIAL_PUBLISHED_JOURNALS.forEach((j) => {
+      if (!deletedSet.has(j.id)) {
+        map.set(j.id, j);
+      }
+    });
+    cloudJournals.forEach((j) => {
+      if (deletedSet.has(j.id)) {
+        map.delete(j.id);
+      } else {
+        map.set(j.id, j);
+      }
+    });
+    localJournals.forEach((j) => {
+      if (deletedSet.has(j.id)) {
+        map.delete(j.id);
+      } else {
+        const existing = map.get(j.id);
+        if (!existing || j.updatedAtIso >= existing.updatedAtIso) {
+          map.set(j.id, j);
+        }
+      }
+    });
+    return Array.from(map.values())
+      .filter((j) => !deletedSet.has(j.id))
+      .sort((a, b) => new Date(b.publicationDate).getTime() - new Date(a.publicationDate).getTime());
+  }, [cloudJournals, localJournals, deletedJournalIds]);
 
   // Keep detail modal synced if record updates
   useEffect(() => {
@@ -1783,6 +1889,166 @@ export default function App() {
     showToast('Topic removed from Research Information.');
   };
 
+  // Published Research Journal Handlers (Upload via Local or Google Drive Link)
+  const handleCreatePublishedJournal = async (
+    payload: Omit<PublishedJournalRecord, 'id' | 'createdAtIso' | 'updatedAtIso'>
+  ) => {
+    const cleanId = sanitizeId(`journal_${Date.now()}_${Math.floor(Math.random() * 1000)}`);
+    const nowIso = new Date().toISOString();
+    const writerUid = portalSession?.uid || firebaseUser?.uid || 'bnhs_researcher';
+
+    const newRecord: PublishedJournalRecord = {
+      ...payload,
+      id: cleanId,
+      portalId: 'bnhs',
+      uploaderUid: writerUid,
+      createdAtIso: nowIso,
+      updatedAtIso: nowIso,
+      isBaseline: false,
+    };
+
+    setLocalJournals((prev) => [newRecord, ...prev.filter((j) => j.id !== cleanId)]);
+    setDeletedJournalIds((prev) => prev.filter((id) => id !== cleanId));
+
+    try {
+      localStorage.setItem(
+        LOCAL_PUBLISHED_JOURNALS_KEY,
+        JSON.stringify([newRecord, ...localJournals.filter((j) => j.id !== cleanId)])
+      );
+    } catch {
+      // ignore
+    }
+
+    const docPath = `published_journals/${cleanId}`;
+    try {
+      await setDoc(doc(db, 'published_journals', cleanId), {
+        portalId: 'bnhs',
+        title: newRecord.title.slice(0, 300),
+        authors: newRecord.authors.slice(0, 300),
+        authorAffiliation: (newRecord.authorAffiliation || '').slice(0, 200),
+        division: newRecord.division,
+        journalVolume: (newRecord.journalVolume || '').slice(0, 100),
+        issnOrRefCode: (newRecord.issnOrRefCode || '').slice(0, 60),
+        publicationDate: (newRecord.publicationDate || '').slice(0, 30),
+        abstract: newRecord.abstract.slice(0, 4000),
+        keywords: (newRecord.keywords || '').slice(0, 300),
+        keyFindings: (newRecord.keyFindings || '').slice(0, 2000),
+        fileSourceType: newRecord.fileSourceType,
+        fileName: (newRecord.fileName || '').slice(0, 260),
+        fileSizeBytes: Number(newRecord.fileSizeBytes || 0),
+        fileDataUrl: (newRecord.fileDataUrl || '').slice(0, 750000),
+        driveUrl: (newRecord.driveUrl || '').slice(0, 500),
+        driveEmbedUrl: (newRecord.driveEmbedUrl || '').slice(0, 500),
+        citationApa: (newRecord.citationApa || '').slice(0, 500),
+        viewsCount: Number(newRecord.viewsCount || 1),
+        downloadsCount: Number(newRecord.downloadsCount || 0),
+        uploaderUid: writerUid.slice(0, 128),
+        isBaseline: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      showToast('Research manuscript successfully published and indexed to Research Journal.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, docPath);
+      showToast('Manuscript saved locally (Cloud sync pending).');
+    }
+  };
+
+  const handleEditPublishedJournal = async (journal: PublishedJournalRecord) => {
+    const cleanId = sanitizeId(journal.id);
+    const nowIso = new Date().toISOString();
+    const updatedRecord: PublishedJournalRecord = {
+      ...journal,
+      id: cleanId,
+      updatedAtIso: nowIso,
+    };
+
+    setLocalJournals((prev) => [
+      ...prev.filter((j) => j.id !== cleanId),
+      updatedRecord,
+    ]);
+
+    try {
+      localStorage.setItem(
+        LOCAL_PUBLISHED_JOURNALS_KEY,
+        JSON.stringify([
+          ...localJournals.filter((j) => j.id !== cleanId),
+          updatedRecord,
+        ])
+      );
+    } catch {
+      // ignore
+    }
+
+    const docPath = `published_journals/${cleanId}`;
+    try {
+      await updateDoc(doc(db, 'published_journals', cleanId), {
+        title: updatedRecord.title.slice(0, 300),
+        authors: updatedRecord.authors.slice(0, 300),
+        authorAffiliation: (updatedRecord.authorAffiliation || '').slice(0, 200),
+        division: updatedRecord.division,
+        journalVolume: (updatedRecord.journalVolume || '').slice(0, 100),
+        issnOrRefCode: (updatedRecord.issnOrRefCode || '').slice(0, 60),
+        publicationDate: (updatedRecord.publicationDate || '').slice(0, 30),
+        abstract: updatedRecord.abstract.slice(0, 4000),
+        keywords: (updatedRecord.keywords || '').slice(0, 300),
+        keyFindings: (updatedRecord.keyFindings || '').slice(0, 2000),
+        fileSourceType: updatedRecord.fileSourceType,
+        fileName: (updatedRecord.fileName || '').slice(0, 260),
+        fileSizeBytes: Number(updatedRecord.fileSizeBytes || 0),
+        fileDataUrl: (updatedRecord.fileDataUrl || '').slice(0, 750000),
+        driveUrl: (updatedRecord.driveUrl || '').slice(0, 500),
+        driveEmbedUrl: (updatedRecord.driveEmbedUrl || '').slice(0, 500),
+        citationApa: (updatedRecord.citationApa || '').slice(0, 500),
+        updatedAt: serverTimestamp(),
+      });
+      showToast('Research Journal manuscript details updated.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, docPath);
+      showToast('Changes saved locally.');
+    }
+  };
+
+  const handleDeletePublishedJournal = async (id: string) => {
+    const cleanId = sanitizeId(id);
+    setDeletedJournalIds((prev) => [...prev, cleanId, id]);
+    setLocalJournals((prev) => prev.filter((j) => j.id !== cleanId && j.id !== id));
+
+    try {
+      const currentDeleted = deletedJournalIds;
+      localStorage.setItem(
+        LOCAL_DELETED_JOURNAL_IDS_KEY,
+        JSON.stringify([...currentDeleted, cleanId, id])
+      );
+      localStorage.setItem(
+        LOCAL_PUBLISHED_JOURNALS_KEY,
+        JSON.stringify(localJournals.filter((j) => j.id !== cleanId && j.id !== id))
+      );
+    } catch {
+      // ignore
+    }
+
+    const docPath = `published_journals/${cleanId}`;
+    try {
+      await deleteDoc(doc(db, 'published_journals', cleanId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, docPath);
+    }
+    showToast('Manuscript removed from Research Journal.');
+  };
+
+  const handleIncrementJournalViews = (id: string) => {
+    setLocalJournals((prev) =>
+      prev.map((j) => (j.id === id ? { ...j, viewsCount: (j.viewsCount || 0) + 1 } : j))
+    );
+  };
+
+  const handleIncrementJournalDownloads = (id: string) => {
+    setLocalJournals((prev) =>
+      prev.map((j) => (j.id === id ? { ...j, downloadsCount: (j.downloadsCount || 0) + 1 } : j))
+    );
+  };
+
   // Navigation helper to switch division view
   const navigateToDivision = (
     div: ResearchDivisionId,
@@ -2407,6 +2673,42 @@ export default function App() {
       }
     }
 
+    // 7. Sync Published Research Journals
+    for (const jrnl of activePublishedJournals) {
+      const cleanId = sanitizeId(jrnl.id);
+      try {
+        await setDoc(doc(db, 'published_journals', cleanId), {
+          portalId: 'bnhs',
+          title: (jrnl.title || '').slice(0, 300),
+          authors: (jrnl.authors || '').slice(0, 300),
+          authorAffiliation: (jrnl.authorAffiliation || '').slice(0, 200),
+          division: jrnl.division,
+          journalVolume: (jrnl.journalVolume || '').slice(0, 100),
+          issnOrRefCode: (jrnl.issnOrRefCode || '').slice(0, 60),
+          publicationDate: (jrnl.publicationDate || '').slice(0, 30),
+          abstract: (jrnl.abstract || '').slice(0, 4000),
+          keywords: (jrnl.keywords || '').slice(0, 300),
+          keyFindings: (jrnl.keyFindings || '').slice(0, 2000),
+          doiOrExternalLink: (jrnl.doiOrExternalLink || '').slice(0, 500),
+          fileSourceType: jrnl.fileSourceType,
+          fileName: (jrnl.fileName || '').slice(0, 260),
+          fileSizeBytes: Number(jrnl.fileSizeBytes || 0),
+          fileDataUrl: (jrnl.fileDataUrl || '').slice(0, 750000),
+          driveUrl: (jrnl.driveUrl || '').slice(0, 500),
+          driveEmbedUrl: (jrnl.driveEmbedUrl || '').slice(0, 500),
+          citationApa: (jrnl.citationApa || '').slice(0, 500),
+          viewsCount: Number(jrnl.viewsCount || 0),
+          downloadsCount: Number(jrnl.downloadsCount || 0),
+          uploaderUid: (jrnl.uploaderUid || writerUid).slice(0, 128),
+          isBaseline: Boolean(jrnl.isBaseline),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // ignore
+      }
+    }
+
     setLastSyncedTime(
       new Date().toLocaleTimeString([], {
         hour: '2-digit',
@@ -2615,6 +2917,17 @@ export default function App() {
           </button>
           <button
             type="button"
+            onClick={() => setActiveSection('journal')}
+            className={`hover:text-white transition-colors whitespace-nowrap shrink-0 py-1 ${
+              activeSection === 'journal'
+                ? 'text-white underline underline-offset-8 decoration-amber-400 decoration-2 font-semibold'
+                : ''
+            }`}
+          >
+            Research Journal
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveSection('directory')}
             className={`hover:text-white transition-colors whitespace-nowrap shrink-0 py-1 ${
               activeSection === 'directory'
@@ -2626,24 +2939,22 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Zone 3: 1 primary action */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <button
-            type="button"
-            onClick={() =>
-              handleOpenSubmitModal(
-                activeSection === 'basic' ||
-                  activeSection === 'action' ||
-                  activeSection === 'tuklas'
-                  ? activeSection
-                  : 'basic'
-              )
-            }
-            className="px-2.5 py-1.5 sm:px-4 sm:py-2 text-[11px] sm:text-xs font-semibold text-zinc-950 bg-amber-400 hover:bg-amber-300 transition-colors whitespace-nowrap shrink-0"
-          >
-            Submit Research
-          </button>
-        </div>
+        {/* Zone 3: User badge if authenticated, otherwise clean header */}
+        {currentUser && (
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsLoginModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-medium text-rose-100 bg-[#520E17] hover:bg-[#430B13] border border-rose-800/80 transition-colors whitespace-nowrap shrink-0"
+              title="Click to view account details or switch role"
+            >
+              <Users className="w-3.5 h-3.5 text-amber-300" />
+              <span className="max-w-[110px] sm:max-w-[150px] truncate text-white font-semibold">
+                {currentUser.displayName || 'BNHS Account'}
+              </span>
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Mobile Navigation Strip */}
@@ -2654,21 +2965,33 @@ export default function App() {
             { id: 'basic', label: 'Basic Research' },
             { id: 'action', label: 'Action Research' },
             { id: 'tuklas', label: 'TUKLAS Fair' },
+            { id: 'journal', label: 'Research Journal' },
             { id: 'directory', label: 'Researchers & Admin' },
+            { id: 'submit', label: '+ Submit Research' },
           ] as const
         ).map((nav) => (
           <button
             key={nav.id}
             type="button"
             onClick={() => {
-              if (nav.id === 'basic' || nav.id === 'action' || nav.id === 'tuklas') {
+              if (nav.id === 'submit') {
+                handleOpenSubmitModal(
+                  activeSection === 'basic' ||
+                    activeSection === 'action' ||
+                    activeSection === 'tuklas'
+                    ? activeSection
+                    : 'basic'
+                );
+              } else if (nav.id === 'basic' || nav.id === 'action' || nav.id === 'tuklas') {
                 navigateToDivision(nav.id);
               } else {
                 setActiveSection(nav.id);
               }
             }}
             className={`px-3 py-1 text-xs font-medium whitespace-nowrap shrink-0 ${
-              activeSection === nav.id
+              nav.id === 'submit'
+                ? 'bg-amber-400 text-zinc-950 font-bold border border-amber-300'
+                : activeSection === nav.id
                 ? 'bg-amber-400 text-zinc-950 font-semibold'
                 : 'text-rose-100'
             }`}
@@ -2679,8 +3002,8 @@ export default function App() {
       </div>
 
       {/* Center-Aligned Institutional Sub-Bar in Maroon Color */}
-      <div className="bg-[#520E17] text-rose-100 border-b border-rose-950 px-6 lg:px-10 py-3">
-        <div className="max-w-7xl mx-auto flex flex-col items-center justify-center text-center gap-1.5 text-xs">
+      <div className="bg-[#520E17] text-rose-100 border-b border-rose-950 px-3 sm:px-6 lg:px-10 py-2 sm:py-3">
+        <div className="max-w-7xl mx-auto flex flex-col items-center justify-center text-center gap-2 text-xs">
           <div className="flex items-center justify-center gap-2 flex-wrap">
             <span className="font-semibold text-white">
               Barobo National High School
@@ -2692,6 +3015,27 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-center gap-3 flex-wrap">
+            {/* Primary Submit Research Menu Action Placed Below Header */}
+            <button
+              type="button"
+              onClick={() =>
+                handleOpenSubmitModal(
+                  activeSection === 'basic' ||
+                    activeSection === 'action' ||
+                    activeSection === 'tuklas'
+                    ? activeSection
+                    : 'basic'
+                )
+              }
+              className="inline-flex items-center gap-1.5 px-3.5 py-1 text-xs font-bold text-zinc-950 bg-amber-400 hover:bg-amber-300 transition-colors shadow-xs whitespace-nowrap shrink-0"
+              title="Submit a new Basic Research, Action Research, or TUKLAS proposal"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Submit Research</span>
+            </button>
+
+            <span aria-hidden="true" className="text-rose-300/60">|</span>
+
             <button
               type="button"
               onClick={() => downloadStandalonePortalHtml(allResearches)}
@@ -2753,16 +3097,7 @@ export default function App() {
                   <span>Sign Out</span>
                 </button>
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsLoginModalOpen(true)}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-white hover:text-amber-300 whitespace-nowrap shrink-0"
-              >
-                <LogIn className="w-3.5 h-3.5 text-amber-300" />
-                <span>Barobo NHS (Teacher / Student / Admin Login)</span>
-              </button>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
@@ -2827,42 +3162,42 @@ export default function App() {
       )}
 
       {/* MAIN CONTENT VIEWPORT */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 lg:px-10 py-8 md:py-10 space-y-12">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-10 py-6 md:py-10 space-y-8 sm:space-y-12">
         {/* ==================== 1. OVERVIEW / HOME DASHBOARD ==================== */}
         {activeSection === 'overview' && (
           <>
             {/* 2-Column Hero Split with items-stretch (Customizable via Admin Overview Manager) */}
-            <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch bg-white border border-zinc-200 p-6 md:p-10">
+            <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch bg-white border border-zinc-200 p-4 sm:p-6 md:p-10">
               <div className="lg:col-span-7 flex flex-col justify-between space-y-6">
                 <div className="space-y-4">
                   <div className="text-xs text-zinc-500">
                     {heroOverviewItem.code}
                   </div>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                     <img
                       src="/assets/aistudio/BNHS_LOGO_animated.gif"
                       alt="Barobo National High School Official Animated Seal (GIF)"
-                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-contain shrink-0 border-2 border-[#6B1420]/20 bg-white p-1 shadow-sm bnhs-logo-animate"
+                      className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full object-contain shrink-0 border-2 border-[#6B1420]/20 bg-white p-1 shadow-sm bnhs-logo-animate"
                     />
                     <h1
-                      className="text-3xl sm:text-4xl lg:text-[2.45rem] font-display font-semibold text-[#6B1420] leading-[1.15]"
+                      className="text-2xl sm:text-3xl lg:text-[2.45rem] font-display font-semibold text-[#6B1420] leading-[1.15]"
                       style={{ textWrap: 'balance' }}
                     >
                       {heroOverviewItem.title}
                     </h1>
                   </div>
-                  <p className="text-base text-zinc-600 leading-relaxed max-w-2xl">
+                  <p className="text-sm sm:text-base text-zinc-600 leading-relaxed max-w-2xl">
                     {heroOverviewItem.description}
                   </p>
                 </div>
 
                 {/* Primary & Secondary Actions */}
                 <div className="space-y-4 pt-2">
-                  <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                     <button
                       type="button"
                       onClick={() => handleOpenSubmitModal('basic')}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
+                      className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-5 sm:py-2.5 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
                     >
                       <Plus className="w-4 h-4" />
                       <span>Submit Research Entry</span>
@@ -2871,7 +3206,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => downloadStandalonePortalHtml(allResearches)}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-zinc-900 bg-[#FAF9F5] border border-zinc-300 hover:bg-zinc-100 transition-colors whitespace-nowrap shrink-0"
+                      className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs font-semibold text-zinc-900 bg-[#FAF9F5] border border-zinc-300 hover:bg-zinc-100 transition-colors whitespace-nowrap shrink-0"
                     >
                       <Download className="w-4 h-4 text-[#6B1420]" />
                       <span>Download BNHS Research Portal (HTML)</span>
@@ -2883,7 +3218,7 @@ export default function App() {
                         setActiveSection('directory');
                         setDirectoryTab('admin');
                       }}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 transition-colors whitespace-nowrap shrink-0"
+                      className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 transition-colors whitespace-nowrap shrink-0"
                     >
                       <ShieldCheck className="w-4 h-4 text-amber-700" />
                       <span>Admin &amp; Overview Customization</span>
@@ -2898,7 +3233,7 @@ export default function App() {
               </div>
 
               {/* Right Column Hero Visual */}
-              <div className="lg:col-span-5 min-h-[280px] relative overflow-hidden bg-[#6B1420]">
+              <div className="lg:col-span-5 min-h-[220px] sm:min-h-[260px] lg:min-h-[300px] relative overflow-hidden bg-[#6B1420]">
                 {!imgErrors.hero && (heroOverviewItem.imageUrl || PORTAL_IMAGES.heroCampus) ? (
                   <img
                     src={resolveOverviewImageLink(heroOverviewItem.imageUrl || PORTAL_IMAGES.heroCampus)}
@@ -2950,10 +3285,10 @@ export default function App() {
             />
 
             {/* Full-Width 4-Column Institutional Statistics Row */}
-            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white border border-zinc-200 p-6">
+            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="bg-white border border-zinc-200 p-4 sm:p-5 md:p-6">
                 <div className="text-xs text-zinc-500">Total Indexed Studies</div>
-                <div className="text-3xl font-mono font-bold text-zinc-900 mt-1.5 tabular-nums">
+                <div className="text-2xl sm:text-3xl font-mono font-bold text-zinc-900 mt-1.5 tabular-nums">
                   {stats.total}
                 </div>
                 <div className="text-xs text-zinc-500 mt-1">
@@ -2964,13 +3299,13 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => navigateToDivision('basic')}
-                className="text-left bg-white border border-zinc-200 hover:border-[#6B1420] p-6 transition-colors group"
+                className="text-left bg-white border border-zinc-200 hover:border-[#6B1420] p-4 sm:p-5 md:p-6 transition-colors group"
               >
                 <div className="flex items-center justify-between text-xs text-zinc-500">
                   <span>01. Basic Research</span>
                   <ArrowUpRight className="w-4 h-4 text-zinc-400 group-hover:text-[#6B1420]" />
                 </div>
-                <div className="text-3xl font-mono font-bold text-[#6B1420] mt-1.5 tabular-nums">
+                <div className="text-2xl sm:text-3xl font-mono font-bold text-[#6B1420] mt-1.5 tabular-nums">
                   {stats.basicCount}
                 </div>
                 <div className="text-xs text-zinc-500 mt-1">
@@ -2981,13 +3316,13 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => navigateToDivision('action')}
-                className="text-left bg-white border border-zinc-200 hover:border-[#6B1420] p-6 transition-colors group"
+                className="text-left bg-white border border-zinc-200 hover:border-[#6B1420] p-4 sm:p-5 md:p-6 transition-colors group"
               >
                 <div className="flex items-center justify-between text-xs text-zinc-500">
                   <span>02. Action Research</span>
                   <ArrowUpRight className="w-4 h-4 text-zinc-400 group-hover:text-[#6B1420]" />
                 </div>
-                <div className="text-3xl font-mono font-bold text-[#6B1420] mt-1.5 tabular-nums">
+                <div className="text-2xl sm:text-3xl font-mono font-bold text-[#6B1420] mt-1.5 tabular-nums">
                   {stats.actionCount}
                 </div>
                 <div className="text-xs text-zinc-500 mt-1">
@@ -2998,13 +3333,13 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => navigateToDivision('tuklas')}
-                className="text-left bg-white border border-zinc-200 hover:border-[#6B1420] p-6 transition-colors group"
+                className="text-left bg-white border border-zinc-200 hover:border-[#6B1420] p-4 sm:p-5 md:p-6 transition-colors group"
               >
                 <div className="flex items-center justify-between text-xs text-zinc-500">
                   <span>03. TUKLAS Project Fair</span>
                   <ArrowUpRight className="w-4 h-4 text-zinc-400 group-hover:text-[#6B1420]" />
                 </div>
-                <div className="text-3xl font-mono font-bold text-amber-700 mt-1.5 tabular-nums">
+                <div className="text-2xl sm:text-3xl font-mono font-bold text-amber-700 mt-1.5 tabular-nums">
                   {stats.tuklasCount}
                 </div>
                 <div className="text-xs text-zinc-500 mt-1">
@@ -3120,7 +3455,7 @@ export default function App() {
             {/* Quick Interactive Overview of Action Research (7 Themes) & TUKLAS (4 Categories) */}
             <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
               {/* Left 7 Cols: Action Research 7 Official Themes */}
-              <div className="lg:col-span-7 bg-white border border-zinc-200 p-6 md:p-8 space-y-5">
+              <div className="lg:col-span-7 bg-white border border-zinc-200 p-4 sm:p-6 md:p-8 space-y-5">
                 <div className="flex items-center justify-between border-b border-zinc-200 pb-4">
                   <div>
                     <div className="text-xs text-zinc-500">
@@ -3180,7 +3515,7 @@ export default function App() {
               </div>
 
               {/* Right 5 Cols: TUKLAS 5 Major Categories & Subcategories (including Innovation Expo) */}
-              <div className="lg:col-span-5 bg-white border border-zinc-200 p-6 md:p-8 space-y-5">
+              <div className="lg:col-span-5 bg-white border border-zinc-200 p-4 sm:p-6 md:p-8 space-y-5">
                 <div className="flex items-center justify-between border-b border-zinc-200 pb-4">
                   <div>
                     <div className="text-xs text-zinc-500">
@@ -3248,7 +3583,7 @@ export default function App() {
 
         {/* ==================== 2. DEDICATED DIVISION HEADER BANNERS ==================== */}
         {activeSection === 'basic' && (
-          <section className="bg-white border border-zinc-200 p-6 md:p-8 space-y-6">
+          <section className="bg-white border border-zinc-200 p-4 sm:p-6 md:p-8 space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 pb-5">
               <div className="max-w-3xl">
                 <div className="text-xs text-zinc-500">
@@ -3313,7 +3648,7 @@ export default function App() {
         )}
 
         {activeSection === 'action' && (
-          <section className="bg-white border border-zinc-200 p-6 md:p-8 space-y-6">
+          <section className="bg-white border border-zinc-200 p-4 sm:p-6 md:p-8 space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 pb-5">
               <div className="max-w-3xl">
                 <div className="text-xs text-zinc-500">
@@ -3379,7 +3714,7 @@ export default function App() {
         )}
 
         {activeSection === 'tuklas' && (
-          <section className="bg-white border border-zinc-200 p-6 md:p-8 space-y-6">
+          <section className="bg-white border border-zinc-200 p-4 sm:p-6 md:p-8 space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 pb-5">
               <div className="max-w-3xl">
                 <div className="text-xs text-zinc-500">
@@ -3479,7 +3814,7 @@ export default function App() {
         )}
 
         {/* ==================== 3. PUBLIC RESEARCH LIBRARY & FILTERABLE REPOSITORY ==================== */}
-        {activeSection !== 'directory' && (
+        {activeSection !== 'directory' && activeSection !== 'journal' && (
           <section className="space-y-6" id="research-library">
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-zinc-200 pb-4">
               <div>
@@ -4016,7 +4351,22 @@ export default function App() {
           </section>
         )}
 
-        {/* ==================== 4. RESEARCHERS & ADMINISTRATOR WORKFLOW VIEW ==================== */}
+        {/* ==================== 4. RESEARCH JOURNAL (PUBLISHED RESEARCH LIBRARY) ==================== */}
+        {activeSection === 'journal' && (
+          <ResearchJournalView
+            journals={activePublishedJournals}
+            isAdmin={isAdmin}
+            onPublishJournal={handleCreatePublishedJournal}
+            onEditJournal={handleEditPublishedJournal}
+            onDeleteJournal={handleDeletePublishedJournal}
+            onIncrementViews={handleIncrementJournalViews}
+            onIncrementDownloads={handleIncrementJournalDownloads}
+            cloudSyncState={cloudSyncState}
+            lastSyncedTime={lastSyncedTime}
+          />
+        )}
+
+        {/* ==================== 5. RESEARCHERS & ADMINISTRATOR WORKFLOW VIEW ==================== */}
         {activeSection === 'directory' && (
           <section className="space-y-6">
             {/* Sub-Navigation Switcher between Researcher Profiles & Admin Evaluation Dashboard */}
@@ -4113,7 +4463,7 @@ export default function App() {
 
       {/* INSTITUTIONAL FOOTER IN MAROON WITH AUTO-UPDATING YEAR MARQUEE */}
       <footer className="bg-[#6B1420] border-t border-rose-950 mt-16 text-xs text-rose-100">
-        <div className="max-w-7xl mx-auto py-7 px-6 lg:px-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto py-6 sm:py-7 px-3 sm:px-6 lg:px-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <img
               src="/assets/aistudio/BNHS_LOGO_animated.gif"
@@ -4130,6 +4480,17 @@ export default function App() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSection('journal');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="text-amber-300 hover:text-white font-semibold transition-colors"
+            >
+              Research Journal ({activePublishedJournals.length})
+            </button>
+            <span aria-hidden="true" className="text-rose-300">·</span>
             <button
               type="button"
               onClick={() => downloadStandalonePortalHtml(allResearches)}
