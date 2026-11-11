@@ -19,6 +19,14 @@ import {
   Video,
   Film,
   Play,
+  Images,
+  Check,
+  X,
+  Sparkles,
+  Layers,
+  FolderUp,
+  HardDrive,
+  Link2,
 } from 'lucide-react';
 import {
   ResearchRecord,
@@ -34,7 +42,7 @@ import {
   downloadStandalonePortalHtml,
   getDivisionLabel,
 } from '../utils/reportExporter';
-import { parseVideoSource } from '../utils/videoUtils';
+import { parseVideoSource, extractGoogleDriveFileId } from '../utils/videoUtils';
 
 /**
  * Converts a Google Drive sharing link (e.g. https://drive.google.com/file/d/FILE_ID/view)
@@ -53,7 +61,182 @@ export function resolveOverviewImageLink(url: string): string {
   if (idParamMatch && idParamMatch[1] && trimmed.includes('drive.google.com')) {
     return `https://drive.google.com/thumbnail?id=${idParamMatch[1]}&sz=w1000`;
   }
+  if (trimmed.match(/^[a-zA-Z0-9_-]{28,45}$/)) {
+    return `https://drive.google.com/thumbnail?id=${trimmed}&sz=w1000`;
+  }
   return trimmed;
+}
+
+/**
+ * Extracts multiple Google Drive file IDs and direct high-resolution 1000px thumbnail URLs
+ * from a raw block of text (supporting newlines, commas, whitespace, or full URLs).
+ */
+export function extractGoogleDriveLinks(
+  text: string
+): Array<{ id: string; url: string; directThumbnailUrl: string }> {
+  if (!text) return [];
+  const lines = text.split(/[\r\n,]+/).map((l) => l.trim()).filter(Boolean);
+  const results: Array<{ id: string; url: string; directThumbnailUrl: string }> = [];
+  const seenIds = new Set<string>();
+
+  for (const line of lines) {
+    const fileId = extractGoogleDriveFileId(line);
+    if (fileId && !seenIds.has(fileId)) {
+      seenIds.add(fileId);
+      results.push({
+        id: fileId,
+        url: line,
+        directThumbnailUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`,
+      });
+    } else if (line.match(/^[a-zA-Z0-9_-]{25,45}$/) && !seenIds.has(line)) {
+      seenIds.add(line);
+      results.push({
+        id: line,
+        url: `https://drive.google.com/file/d/${line}/view`,
+        directThumbnailUrl: `https://drive.google.com/thumbnail?id=${line}&sz=w1000`,
+      });
+    }
+  }
+
+  // Also catch any embedded /file/d/ links in raw pasted text blocks
+  const regex = /\/file\/d\/([a-zA-Z0-9_-]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    const fileId = match[1];
+    if (!seenIds.has(fileId)) {
+      seenIds.add(fileId);
+      results.push({
+        id: fileId,
+        url: `https://drive.google.com/file/d/${fileId}/view`,
+        directThumbnailUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Takes an image URL (such as a Google Drive high-resolution thumbnail or web link),
+ * loads it into an off-screen canvas, center-crops and scales it to the required 1000 × 500 dimensions (2:1).
+ * If browser CORS prevents canvas reading, it safely resolves the direct 1000px wide URL.
+ */
+export function cropAndScaleImageUrlTo1000x500(imageUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    if (!imageUrl) return resolve('');
+    if (imageUrl.startsWith('data:')) return resolve(imageUrl);
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const targetWidth = 1000;
+        const targetHeight = 500;
+        const targetAspect = targetWidth / targetHeight; // 2.0 (1000x500)
+        const imgAspect = img.width / img.height;
+
+        let sx = 0;
+        let sy = 0;
+        let sw = img.width;
+        let sh = img.height;
+
+        if (imgAspect > targetAspect) {
+          sw = Math.round(img.height * targetAspect);
+          sx = Math.round((img.width - sw) / 2);
+        } else {
+          sh = Math.round(img.width / targetAspect);
+          sy = Math.round((img.height - sh) / 2);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
+          const compressed = canvas.toDataURL('image/jpeg', 0.88);
+          return resolve(compressed);
+        }
+        resolve(imageUrl);
+      } catch {
+        // Fall back gracefully to direct 1000px thumbnail URL if CORS restriction triggers
+        resolve(imageUrl);
+      }
+    };
+    img.onerror = () => {
+      resolve(imageUrl);
+    };
+    img.src = imageUrl;
+  });
+}
+
+/**
+ * Automatically scales and center-crops any selected image file to the exact
+ * 1000 × 500 aspect ratio (2:1). Returns a high-quality JPEG DataURL.
+ */
+export function cropAndScaleTo1000x500(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const rawDataUrl = String(event.target?.result || '');
+      const img = new Image();
+      img.onload = () => {
+        const targetWidth = 1000;
+        const targetHeight = 500;
+        const targetAspect = targetWidth / targetHeight; // 2.0 (1000x500)
+        const imgAspect = img.width / img.height;
+
+        let sx = 0;
+        let sy = 0;
+        let sw = img.width;
+        let sh = img.height;
+
+        if (imgAspect > targetAspect) {
+          // Source image is wider than 2:1 -> center-crop horizontally
+          sw = Math.round(img.height * targetAspect);
+          sx = Math.round((img.width - sw) / 2);
+        } else {
+          // Source image is taller than 2:1 -> center-crop vertically
+          sh = Math.round(img.width / targetAspect);
+          sy = Math.round((img.height - sh) / 2);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          resolve(compressed);
+        } else {
+          resolve(rawDataUrl);
+        }
+      };
+      img.onerror = () => reject(new Error(`Failed to load image: ${file.name}`));
+      img.src = rawDataUrl;
+    };
+    reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Formats a clean, readable exhibition title from the raw uploaded image filename.
+ */
+export function formatTitleFromFileName(filename: string): string {
+  const withoutExt = filename.replace(/\.[^/.]+$/, '');
+  const cleaned = withoutExt.replace(/[_-]+/g, ' ').trim();
+  if (!cleaned) return 'BNHS Research Exhibition';
+  return cleaned
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 interface AdminEvaluationViewProps {
@@ -80,6 +263,9 @@ interface AdminEvaluationViewProps {
   onSaveGalleryItem?: (
     item: Omit<ResearchGalleryItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>
   ) => Promise<void>;
+  onBulkSaveGalleryItems?: (
+    items: Omit<ResearchGalleryItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>[]
+  ) => Promise<void>;
   onDeleteGalleryItem?: (itemId: string) => Promise<void>;
   onDeleteAllGalleryItems?: () => Promise<void>;
   onResetGalleryDefaults?: () => Promise<void>;
@@ -88,6 +274,20 @@ interface AdminEvaluationViewProps {
     item: Omit<ResearchInformationItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>
   ) => Promise<void>;
   onDeleteInformationItem?: (itemId: string) => Promise<void>;
+}
+
+export interface BulkUploadProgress {
+  total: number;
+  current: number;
+  percentage: number;
+  currentFileName: string;
+  status: 'processing' | 'saving' | 'complete';
+}
+
+export interface BulkUploadSummary {
+  count: number;
+  timestamp: string;
+  titles: string[];
 }
 
 export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
@@ -110,6 +310,7 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
   emailAlertLogs,
   galleryItems = [],
   onSaveGalleryItem,
+  onBulkSaveGalleryItems,
   onDeleteGalleryItem,
   onDeleteAllGalleryItems,
   onResetGalleryDefaults,
@@ -156,6 +357,16 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
   const [confirmDeleteGalId, setConfirmDeleteGalId] = useState<string | null>(null);
   const [confirmDeleteAllGal, setConfirmDeleteAllGal] = useState<boolean>(false);
   const [deletingGalleryBusy, setDeletingGalleryBusy] = useState<boolean>(false);
+
+  // Bulk Image Upload Progress & Summary Notification State (1000 x 500)
+  const [bulkProgress, setBulkProgress] = useState<BulkUploadProgress | null>(null);
+  const [bulkSummaryNotification, setBulkSummaryNotification] = useState<BulkUploadSummary | null>(null);
+
+  // Gallery Upload Mode ('local' = Local Device Files, 'gdrive' = Google Drive Importer)
+  const [galleryUploadMode, setGalleryUploadMode] = useState<'local' | 'gdrive'>('local');
+  const [gdriveBulkInput, setGdriveBulkInput] = useState<string>('');
+  const [gdriveCustomTitle, setGdriveCustomTitle] = useState<string>('');
+  const [isProcessingGDrive, setIsProcessingGDrive] = useState<boolean>(false);
 
   // Research Information Manager State (1000 x 500 Videos - YouTube & Google Drive)
   const [isInfoFormOpen, setIsInfoFormOpen] = useState<boolean>(false);
@@ -209,7 +420,11 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
   const openEditOverviewItem = (item: OverviewItemRecord) => {
     setEditingOverviewId(item.id);
     setOvType(item.itemType);
-    setOvCode(item.code);
+    setOvCode(
+      item.code === 'DepEd Caraga · Division of Surigao del S'
+        ? 'DepEd Caraga · Division of Surigao del Sur'
+        : item.code
+    );
     setOvTitle(item.title);
     setOvSubtitle(item.subtitle);
     setOvDescription(item.description);
@@ -328,30 +543,258 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
     setGalFeedback('');
   };
 
-  const handleGalleryPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleGalleryPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const rawDataUrl = String(event.target?.result || '');
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 1000;
-        canvas.height = 500;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, 1000, 500);
-          const compressed = canvas.toDataURL('image/jpeg', 0.85);
-          setGalImageUrl(compressed);
-        } else {
-          setGalImageUrl(rawDataUrl);
-        }
+    try {
+      const compressed = await cropAndScaleTo1000x500(file);
+      setGalImageUrl(compressed);
+      if (!galTitle.trim()) {
+        setGalTitle(formatTitleFromFileName(file.name));
+      }
+    } catch {
+      // Fallback in case of processing error
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setGalImageUrl(String(event.target?.result || ''));
       };
-      img.src = rawDataUrl;
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  /**
+   * Bulk Upload: processes multiple selected image files, scaling each to 1000 × 500,
+   * showing visual progress, and issuing a summary notification upon completion.
+   */
+  const handleBulkGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    // Reset file input so user can re-select the same files if desired
+    e.target.value = '';
+
+    setGalFeedback('');
+    setBulkSummaryNotification(null);
+
+    const highestOrder = galleryItems.reduce(
+      (max, item) => Math.max(max, item.displayOrder || 0),
+      0
+    );
+    const processedItems: Omit<
+      ResearchGalleryItemRecord,
+      'portalId' | 'createdAtIso' | 'updatedAtIso'
+    >[] = [];
+
+    setBulkProgress({
+      total: files.length,
+      current: 0,
+      percentage: 5,
+      currentFileName: files[0].name,
+      status: 'processing',
+    });
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setBulkProgress({
+          total: files.length,
+          current: i,
+          percentage: Math.round((i / files.length) * 85) + 5,
+          currentFileName: file.name,
+          status: 'processing',
+        });
+
+        // Guaranteed exact 1000x500 aspect ratio conversion
+        const dataUrl = await cropAndScaleTo1000x500(file);
+        const title = formatTitleFromFileName(file.name);
+        const order = highestOrder + i + 1;
+        const id = `gallery_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`;
+
+        const itemPayload: Omit<
+          ResearchGalleryItemRecord,
+          'portalId' | 'createdAtIso' | 'updatedAtIso'
+        > = {
+          id,
+          title,
+          caption: `Research activity and scientific exhibition documentation at Barobo National High School (1000 × 500).`,
+          imageUrl: dataUrl,
+          displayOrder: order,
+          isDeleted: false,
+        };
+
+        processedItems.push(itemPayload);
+
+        // If no batch save handler provided, save individual item
+        if (!onBulkSaveGalleryItems && onSaveGalleryItem) {
+          await onSaveGalleryItem(itemPayload);
+        }
+
+        // Brief delay for smooth visual progress bar animation
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      }
+
+      setBulkProgress({
+        total: files.length,
+        current: files.length,
+        percentage: 95,
+        currentFileName: 'Saving to Gallery Database...',
+        status: 'saving',
+      });
+
+      if (onBulkSaveGalleryItems) {
+        await onBulkSaveGalleryItems(processedItems);
+      }
+
+      setBulkProgress({
+        total: files.length,
+        current: files.length,
+        percentage: 100,
+        currentFileName: 'Completed!',
+        status: 'complete',
+      });
+
+      const summary: BulkUploadSummary = {
+        count: files.length,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+        titles: processedItems.map((p) => p.title),
+      };
+
+      setBulkSummaryNotification(summary);
+      setGalFeedback(
+        `Successfully uploaded ${files.length} images to the Research Gallery (all defaulted to 1000 × 500 aspect ratio).`
+      );
+    } catch (err) {
+      setGalFeedback(
+        `Error during bulk image upload: ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setTimeout(() => {
+        setBulkProgress(null);
+      }, 3000);
+    }
+  };
+
+  const handleBulkGoogleDriveUpload = async () => {
+    const detectedLinks = extractGoogleDriveLinks(gdriveBulkInput);
+    if (detectedLinks.length === 0) {
+      setGalFeedback(
+        'No valid Google Drive image links detected. Please paste one or more Google Drive sharing links (e.g., https://drive.google.com/file/d/.../view).'
+      );
+      return;
+    }
+
+    setIsProcessingGDrive(true);
+    setGalFeedback('');
+    setBulkSummaryNotification(null);
+
+    const total = detectedLinks.length;
+    setBulkProgress({
+      total,
+      current: 0,
+      percentage: 5,
+      currentFileName: 'Connecting to Google Drive...',
+      status: 'processing',
+    });
+
+    try {
+      const processedItems: Omit<
+        ResearchGalleryItemRecord,
+        'portalId' | 'createdAtIso' | 'updatedAtIso'
+      >[] = [];
+
+      for (let i = 0; i < total; i++) {
+        const link = detectedLinks[i];
+        const currentNum = i + 1;
+        const progressPct = Math.min(92, Math.round(((i + 1) / total) * 90));
+
+        setBulkProgress({
+          total,
+          current: i,
+          percentage: progressPct,
+          currentFileName: `Google Drive Photo #${currentNum} (ID: ${link.id.slice(0, 8)}...)`,
+          status: 'processing',
+        });
+
+        // Center-crop and scale to 1000 × 500 (or resolve direct high-res 1000px thumbnail)
+        const finalImageUrl = await cropAndScaleImageUrlTo1000x500(link.directThumbnailUrl);
+
+        const cleanTitle = gdriveCustomTitle.trim()
+          ? `${gdriveCustomTitle.trim()} - Exhibit ${currentNum}`
+          : `BNHS Research Exhibition - Google Drive Photo ${currentNum}`;
+
+        const itemPayload: Omit<
+          ResearchGalleryItemRecord,
+          'portalId' | 'createdAtIso' | 'updatedAtIso'
+        > = {
+          id: `gal_gdrive_${Date.now()}_${i}_${link.id.slice(0, 8)}`,
+          title: cleanTitle,
+          caption: `Barobo National High School Research Gallery - Imported from Google Drive (Formatted to 1000 × 500 Aspect Ratio).`,
+          imageUrl: finalImageUrl,
+          displayOrder: (galleryItems.length || 0) + i + 1,
+          isDeleted: false,
+        };
+
+        processedItems.push(itemPayload);
+
+        // If no batch save handler provided, save individual item
+        if (!onBulkSaveGalleryItems && onSaveGalleryItem) {
+          await onSaveGalleryItem(itemPayload);
+        }
+
+        // Brief delay for smooth visual progress bar animation
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      }
+
+      setBulkProgress({
+        total,
+        current: total,
+        percentage: 95,
+        currentFileName: 'Saving Google Drive Images to Database...',
+        status: 'saving',
+      });
+
+      if (onBulkSaveGalleryItems) {
+        await onBulkSaveGalleryItems(processedItems);
+      }
+
+      setBulkProgress({
+        total,
+        current: total,
+        percentage: 100,
+        currentFileName: 'Completed!',
+        status: 'complete',
+      });
+
+      const summary: BulkUploadSummary = {
+        count: total,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+        titles: processedItems.map((p) => p.title),
+      };
+
+      setBulkSummaryNotification(summary);
+      setGalFeedback(
+        `Successfully uploaded ${total} images from Google Drive to the Research Gallery (all defaulted to 1000 × 500 aspect ratio).`
+      );
+      setGdriveBulkInput('');
+    } catch (err) {
+      setGalFeedback(
+        `Error during Google Drive bulk import: ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setIsProcessingGDrive(false);
+      setTimeout(() => {
+        setBulkProgress(null);
+      }, 3500);
+    }
   };
 
   const handleGalleryFormSubmit = async (e: React.FormEvent) => {
@@ -491,6 +934,8 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
       setSavingInfo(false);
     }
   };
+
+  const detectedGDriveLinks = extractGoogleDriveLinks(gdriveBulkInput);
 
   return (
     <div className="space-y-8">
@@ -986,6 +1431,34 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                   <span>Add Picture to Gallery (1000 × 500)</span>
                 </button>
 
+                <label className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-700 hover:bg-amber-800 cursor-pointer transition-colors whitespace-nowrap shrink-0 shadow-xs">
+                  <Images className="w-3.5 h-3.5" />
+                  <span>Bulk Upload Pictures (1000 × 500)</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={handleBulkGalleryUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGalleryUploadMode('gdrive');
+                    setIsGalleryFormOpen(false);
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 shadow-xs ${
+                    galleryUploadMode === 'gdrive'
+                      ? 'bg-emerald-800 text-white border-emerald-900 ring-2 ring-emerald-600/30'
+                      : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                  }`}
+                >
+                  <FolderUp className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Upload in Google Drive (1000 × 500)</span>
+                </button>
+
                 {onResetGalleryDefaults && (
                   <button
                     type="button"
@@ -1055,12 +1528,361 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
               </div>
             </div>
 
-            {galFeedback && (
+            {/* Visual Progress Bar for Bulk Upload */}
+            {bulkProgress && (
+              <div className="p-4 bg-white border border-[#6B1420]/30 shadow-sm space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-semibold text-zinc-900">
+                    {bulkProgress.status === 'complete' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <Upload className="w-4 h-4 text-[#6B1420] animate-pulse" />
+                    )}
+                    <span>
+                      {bulkProgress.status === 'complete'
+                        ? `Bulk Upload Completed (${bulkProgress.total} of ${bulkProgress.total} images)`
+                        : bulkProgress.status === 'saving'
+                        ? `Saving Images to Database (${bulkProgress.total} images)...`
+                        : `Processing & Scaling Images (${bulkProgress.current + 1} of ${bulkProgress.total})`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono px-2 py-0.5 bg-rose-50 border border-rose-200 text-[#6B1420] font-semibold">
+                      1000 × 500 Aspect Ratio Guaranteed
+                    </span>
+                    <span className="font-mono font-bold text-xs text-zinc-800">
+                      {bulkProgress.percentage}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Progress Bar Track */}
+                <div className="w-full h-3 bg-zinc-100 rounded-full overflow-hidden border border-zinc-200">
+                  <div
+                    className={`h-full transition-all duration-300 ease-out rounded-full ${
+                      bulkProgress.status === 'complete'
+                        ? 'bg-emerald-600'
+                        : 'bg-gradient-to-r from-[#6B1420] via-rose-700 to-amber-500'
+                    }`}
+                    style={{ width: `${bulkProgress.percentage}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-zinc-500">
+                  <span className="truncate max-w-md">
+                    {bulkProgress.status === 'complete' ? (
+                      <span className="text-emerald-700 font-medium">
+                        All photos scaled to 1000 × 500 and saved.
+                      </span>
+                    ) : (
+                      <span>
+                        Currently processing:{' '}
+                        <strong className="text-zinc-700">
+                          {bulkProgress.currentFileName}
+                        </strong>
+                      </span>
+                    )}
+                  </span>
+                  <span>
+                    {bulkProgress.current} / {bulkProgress.total} photos
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* 'Successfully uploaded X images' Summary Notification */}
+            {bulkSummaryNotification && (
+              <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-950 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                    <Check className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-sm font-semibold flex items-center flex-wrap gap-2 text-emerald-900">
+                      <span>
+                        Successfully uploaded {bulkSummaryNotification.count} images
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-200/60 text-emerald-900 rounded-xs font-semibold">
+                        1000 × 500 Aspect Ratio
+                      </span>
+                      <span className="text-[11px] text-emerald-700 font-normal">
+                        at {bulkSummaryNotification.timestamp}
+                      </span>
+                    </div>
+                    <p className="text-xs text-emerald-800">
+                      All {bulkSummaryNotification.count} images were automatically center-cropped and scaled to the required 1000 × 500 dimensions and added to the Research Gallery slideshow.
+                    </p>
+                    {bulkSummaryNotification.titles.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {bulkSummaryNotification.titles.slice(0, 8).map((title, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 text-[10px] bg-white border border-emerald-200 px-2 py-0.5 text-emerald-900 font-medium rounded-xs"
+                          >
+                            <span>{title}</span>
+                          </span>
+                        ))}
+                        {bulkSummaryNotification.titles.length > 8 && (
+                          <span className="text-[10px] text-emerald-700 font-semibold self-center">
+                            +{bulkSummaryNotification.titles.length - 8} more
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBulkSummaryNotification(null)}
+                  className="self-start md:self-center px-3 py-1.5 text-xs font-semibold text-emerald-900 hover:text-emerald-950 bg-emerald-200/60 hover:bg-emerald-200 transition-colors shrink-0"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
+            {galFeedback && !bulkSummaryNotification && (
               <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span>{galFeedback}</span>
               </div>
             )}
+
+            {/* Gallery Upload Methods: Local Files vs Google Drive Importer */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-2.5">
+                <div className="inline-flex rounded-xs border border-zinc-300 p-0.5 bg-zinc-100">
+                  <button
+                    type="button"
+                    onClick={() => setGalleryUploadMode('local')}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xs transition-colors ${
+                      galleryUploadMode === 'local'
+                        ? 'bg-white text-[#6B1420] shadow-xs'
+                        : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Method 1: Local Device Files (Bulk 1000 × 500)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGalleryUploadMode('gdrive')}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xs transition-colors ${
+                      galleryUploadMode === 'gdrive'
+                        ? 'bg-emerald-800 text-white shadow-xs'
+                        : 'text-zinc-700 hover:text-emerald-800'
+                    }`}
+                  >
+                    <FolderUp className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Method 2: Upload in Google Drive (Bulk / Link)</span>
+                    <span className="text-[10px] bg-amber-400 text-zinc-950 font-bold px-1.5 py-0.2 rounded-xs">
+                      NEW
+                    </span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-500">
+                  <span className="px-2 py-0.5 bg-rose-50 border border-rose-200 text-[#6B1420] font-semibold">
+                    1000 × 500 Aspect Ratio Guaranteed
+                  </span>
+                </div>
+              </div>
+
+              {/* METHOD 1: Local Device Bulk Image Selection Card */}
+              {galleryUploadMode === 'local' && (
+                <div className="bg-[#FAF9F5] border border-dashed border-zinc-300 p-5 text-center hover:border-[#6B1420] transition-colors">
+                  <div className="max-w-xl mx-auto space-y-2.5">
+                    <div className="w-10 h-10 rounded-full bg-rose-50 text-[#6B1420] mx-auto flex items-center justify-center">
+                      <Images className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-display font-semibold text-zinc-900">
+                        Bulk Image Selection &amp; Auto-1000×500 Sizing
+                      </h4>
+                      <p className="text-xs text-zinc-600 mt-0.5">
+                        Select multiple research exhibition photos, fieldwork snapshots, or STEM project images from your computer. Every photo will default to the required 1000 × 500 aspect ratio with real-time progress.
+                      </p>
+                    </div>
+                    <div className="pt-1 flex flex-wrap items-center justify-center gap-3">
+                      <label className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors shadow-xs">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Select Multiple Images to Upload</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={handleBulkGalleryUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setGalleryUploadMode('gdrive')}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 transition-colors"
+                      >
+                        <FolderUp className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Or Import from Google Drive</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* METHOD 2: Google Drive Bulk Image Importer (Auto 1000 x 500 Sizing) */}
+              {galleryUploadMode === 'gdrive' && (
+                <div className="bg-emerald-50/40 border border-emerald-300 p-5 space-y-4 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-200 pb-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 flex items-center justify-center shrink-0">
+                        <FolderUp className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-display font-semibold text-emerald-950">
+                            Upload &amp; Import from Google Drive (Auto-1000×500 Sizing)
+                          </h4>
+                          <span className="text-[10px] font-mono font-semibold px-2 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-xs">
+                            1000 × 500 Aspect Ratio
+                          </span>
+                        </div>
+                        <p className="text-xs text-emerald-800 mt-0.5">
+                          Paste Google Drive photo sharing links. Our processor automatically crops and scales each picture to the exact 1000 × 500 aspect ratio with real-time visual progress.
+                        </p>
+                      </div>
+                    </div>
+
+                    <a
+                      href="https://drive.google.com"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-900 bg-white border border-emerald-300 hover:bg-emerald-100/80 transition-colors shadow-xs shrink-0 self-start sm:self-center"
+                      title="Open Google Drive to upload photos or copy links"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Open Google Drive (drive.google.com)</span>
+                    </a>
+                  </div>
+
+                  {/* 3 Quick Steps Guidance */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-emerald-900 bg-white/90 border border-emerald-200 p-3">
+                    <div className="flex items-start gap-2">
+                      <span className="w-4 h-4 rounded-full bg-emerald-700 text-white text-[10px] flex items-center justify-center shrink-0 font-bold">1</span>
+                      <span>Upload photos to your Google Drive folder</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="w-4 h-4 rounded-full bg-emerald-700 text-white text-[10px] flex items-center justify-center shrink-0 font-bold">2</span>
+                      <span>Set link sharing to <strong>Anyone with the link can view</strong></span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="w-4 h-4 rounded-full bg-emerald-700 text-white text-[10px] flex items-center justify-center shrink-0 font-bold">3</span>
+                      <span>Paste link(s) below — single or multiple photos at once</span>
+                    </div>
+                  </div>
+
+                  {/* Textarea for Multi-Link Paste */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <label className="font-semibold text-emerald-950 flex items-center gap-1.5">
+                        <Link2 className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Paste Google Drive Image Links (Single or Multiple)</span>
+                      </label>
+                      <div>
+                        {detectedGDriveLinks.length > 0 ? (
+                          <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 border border-emerald-300">
+                            ✓ {detectedGDriveLinks.length} Google Drive photo{detectedGDriveLinks.length > 1 ? 's' : ''} detected &amp; ready
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-zinc-500">
+                            Paste links separated by line breaks or commas
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <textarea
+                      rows={4}
+                      value={gdriveBulkInput}
+                      onChange={(e) => setGdriveBulkInput(e.target.value)}
+                      placeholder={`https://drive.google.com/file/d/1A2B3C4D5E.../view?usp=sharing\nhttps://drive.google.com/file/d/2F3G4H5J6K.../view?usp=sharing\nhttps://drive.google.com/open?id=3L4M5N6P7Q...`}
+                      className="w-full px-3 py-2 text-xs font-mono border border-emerald-300 bg-white text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-emerald-700 focus:ring-1 focus:ring-emerald-700"
+                    />
+                  </div>
+
+                  {/* Optional Custom Title and Import Button */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                    <div className="md:col-span-7">
+                      <label className="block text-[11px] font-medium text-zinc-700 mb-1">
+                        Custom Exhibition Title Prefix (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={gdriveCustomTitle}
+                        onChange={(e) => setGdriveCustomTitle(e.target.value)}
+                        placeholder="e.g., BNHS Science &amp; Innovation Expo 2026"
+                        className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white"
+                      />
+                    </div>
+                    <div className="md:col-span-5 flex items-end">
+                      <button
+                        type="button"
+                        disabled={detectedGDriveLinks.length === 0 || isProcessingGDrive}
+                        onClick={handleBulkGoogleDriveUpload}
+                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-emerald-800 hover:bg-emerald-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-xs"
+                      >
+                        <FolderUp className="w-3.5 h-3.5" />
+                        <span>
+                          {isProcessingGDrive
+                            ? 'Processing & Scaling to 1000 × 500...'
+                            : detectedGDriveLinks.length > 0
+                            ? `Import ${detectedGDriveLinks.length} Google Drive Photos (1000 × 500)`
+                            : 'Import Google Drive Photos (1000 × 500)'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Instant 1000 x 500 Preview Grid for Detected Google Drive Links */}
+                  {detectedGDriveLinks.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-emerald-200">
+                      <div className="flex items-center justify-between text-[11px] text-emerald-900 font-semibold">
+                        <span>Instant 1000 × 500 Preview of Detected Photos:</span>
+                        <span className="font-mono text-emerald-800">
+                          {detectedGDriveLinks.length} ready to format &amp; import
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-56 overflow-y-auto p-1 bg-white border border-emerald-200">
+                        {detectedGDriveLinks.map((item, idx) => (
+                          <div
+                            key={item.id + idx}
+                            className="border border-emerald-100 bg-[#FAF9F5] p-1.5 space-y-1 shadow-2xs"
+                          >
+                            <div className="w-full aspect-[1000/500] bg-zinc-900 overflow-hidden relative">
+                              <img
+                                src={item.directThumbnailUrl}
+                                alt={`Google Drive photo ${idx + 1}`}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover"
+                              />
+                              <span className="absolute top-1 right-1 text-[9px] font-mono px-1 py-0.2 bg-black/75 text-white">
+                                1000 × 500
+                              </span>
+                            </div>
+                            <div className="text-[10px] font-semibold text-zinc-800 truncate">
+                              {gdriveCustomTitle.trim()
+                                ? `${gdriveCustomTitle.trim()} - #${idx + 1}`
+                                : `Drive Photo #${idx + 1}`}
+                            </div>
+                            <div className="text-[9px] font-mono text-zinc-500 truncate">
+                              ID: {item.id.slice(0, 14)}...
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Add / Edit Gallery Item Form (1000 x 500) */}
             {isGalleryFormOpen && (
@@ -1155,11 +1977,19 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                       <div className="flex flex-wrap items-center gap-2.5">
                         <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] cursor-pointer transition-colors">
                           <Upload className="w-3.5 h-3.5" />
-                          <span>Upload &amp; Scale to 1000 × 500</span>
+                          <span>Upload &amp; Scale to 1000 × 500 (or select multiple)</span>
                           <input
                             type="file"
+                            multiple
                             accept="image/*"
-                            onChange={handleGalleryPhotoUpload}
+                            onChange={(e) => {
+                              if (e.target.files && e.target.files.length > 1) {
+                                setIsGalleryFormOpen(false);
+                                handleBulkGalleryUpload(e);
+                              } else {
+                                handleGalleryPhotoUpload(e);
+                              }
+                            }}
                             className="hidden"
                           />
                         </label>
@@ -1171,11 +2001,22 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-zinc-100">
-                      <label className="block text-xs font-semibold text-zinc-800 mb-1.5 flex items-center gap-1.5">
-                        <Globe className="w-3.5 h-3.5 text-[#6B1420]" />
-                        <span>Option 2: Photo via Google Drive or Web Link (1000 × 500)</span>
-                      </label>
+                    <div className="pt-2 border-t border-zinc-100 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
+                          <FolderUp className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>Option 2: Google Drive Photo Sharing Link (Auto 1000 × 500 Sizing)</span>
+                        </label>
+                        <a
+                          href="https://drive.google.com"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] text-emerald-800 hover:underline inline-flex items-center gap-1"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>Open Drive</span>
+                        </a>
+                      </div>
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                         <input
                           type="url"
@@ -1184,18 +2025,25 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                             setGalWebLinkInput(e.target.value);
                             setGalImageUrl(resolveOverviewImageLink(e.target.value));
                           }}
-                          placeholder="Paste Google Drive sharing link or direct website image URL"
-                          className="flex-1 px-3 py-2 text-xs border border-zinc-300 bg-[#FAF9F5] focus:outline-none focus:border-[#6B1420]"
+                          placeholder="Paste Google Drive link (https://drive.google.com/file/d/...) or web image URL"
+                          className="flex-1 px-3 py-2 text-xs border border-zinc-300 bg-[#FAF9F5] focus:outline-none focus:border-emerald-700"
                         />
                         <button
                           type="button"
-                          onClick={() => {
-                            setGalImageUrl(resolveOverviewImageLink(galWebLinkInput));
+                          onClick={async () => {
+                            const resolved = resolveOverviewImageLink(galWebLinkInput);
+                            setGalImageUrl(resolved);
+                            try {
+                              const scaled = await cropAndScaleImageUrlTo1000x500(resolved);
+                              if (scaled) setGalImageUrl(scaled);
+                            } catch {
+                              // ignore
+                            }
                           }}
-                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#6B1420] bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors whitespace-nowrap shrink-0"
+                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-800 hover:bg-emerald-900 transition-colors whitespace-nowrap shrink-0"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Apply</span>
+                          <span>Apply &amp; Scale (1000 × 500)</span>
                         </button>
                       </div>
                     </div>

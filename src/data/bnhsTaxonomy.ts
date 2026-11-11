@@ -1117,7 +1117,7 @@ export const INITIAL_OVERVIEW_ITEMS: OverviewItemRecord[] = [
     id: 'overview_hero_main',
     portalId: 'bnhs',
     itemType: 'hero',
-    code: 'DepEd Caraga · Division of Surigao del Sur · Municipality of Barobo',
+    code: 'DepEd Caraga · Division of Surigao del Sur',
     title: 'Barobo National High School Research & Innovation Portal',
     subtitle: 'Empowering Evidence-Based Pedagogy & Student STEM Discovery in Surigao del Sur',
     description:

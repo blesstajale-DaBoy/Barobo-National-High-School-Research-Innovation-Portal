@@ -195,7 +195,13 @@ export default function App() {
   const [localOverviewItems, setLocalOverviewItems] = useState<OverviewItemRecord[]>(() => {
     try {
       const raw = localStorage.getItem(LOCAL_OVERVIEW_ITEMS_KEY);
-      return raw ? JSON.parse(raw) : [];
+      if (!raw) return [];
+      const parsed: OverviewItemRecord[] = JSON.parse(raw);
+      return parsed.map((item) =>
+        item.code === 'DepEd Caraga · Division of Surigao del S'
+          ? { ...item, code: 'DepEd Caraga · Division of Surigao del Sur' }
+          : item
+      );
     } catch {
       return [];
     }
@@ -665,7 +671,10 @@ export default function App() {
             id: docSnap.id,
             portalId: 'bnhs',
             itemType: (d.itemType as 'hero' | 'card') || 'card',
-            code: String(d.code || 'DIV'),
+            code:
+              String(d.code || '').trim() === 'DepEd Caraga · Division of Surigao del S'
+                ? 'DepEd Caraga · Division of Surigao del Sur'
+                : String(d.code || 'DIV'),
             title: String(d.title || ''),
             subtitle: String(d.subtitle || ''),
             description: String(d.description || ''),
@@ -1009,10 +1018,21 @@ export default function App() {
   }, [localOverviewItems, cloudOverviewItems]);
 
   const heroOverviewItem = useMemo(() => {
-    return (
+    const raw =
       activeOverviewItems.find((i) => i.itemType === 'hero') ||
-      INITIAL_OVERVIEW_ITEMS[0]
-    );
+      INITIAL_OVERVIEW_ITEMS[0];
+    if (
+      raw &&
+      (raw.code === 'DepEd Caraga · Division of Surigao del S' ||
+        raw.code === 'DIV' ||
+        !raw.code)
+    ) {
+      return {
+        ...raw,
+        code: 'DepEd Caraga · Division of Surigao del Sur',
+      };
+    }
+    return raw;
   }, [activeOverviewItems]);
 
   const cardOverviewItems = useMemo(() => {
@@ -1319,7 +1339,7 @@ export default function App() {
       if (existsInCloud) {
         await updateDoc(doc(db, 'overview_items', cleanId), {
           itemType: record.itemType,
-          code: record.code.slice(0, 40),
+          code: record.code.slice(0, 120),
           title: record.title.slice(0, 300),
           subtitle: record.subtitle.slice(0, 200),
           description: record.description.slice(0, 2000),
@@ -1334,7 +1354,7 @@ export default function App() {
         await setDoc(doc(db, 'overview_items', cleanId), {
           portalId: 'bnhs',
           itemType: record.itemType,
-          code: record.code.slice(0, 40),
+          code: record.code.slice(0, 120),
           title: record.title.slice(0, 300),
           subtitle: record.subtitle.slice(0, 200),
           description: record.description.slice(0, 2000),
@@ -1473,6 +1493,65 @@ export default function App() {
       handleFirestoreError(error, OperationType.WRITE, docPath);
     }
     showToast('Research Gallery picture (1000 × 500) saved to Cloud Database.');
+  };
+
+  const handleBulkSaveGalleryItems = async (
+    items: Omit<ResearchGalleryItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>[]
+  ) => {
+    if (!items.length) return;
+    const nowIso = new Date().toISOString();
+    const newRecords: ResearchGalleryItemRecord[] = items.map((payload) => {
+      const cleanId = sanitizeId(payload.id);
+      return {
+        ...payload,
+        id: cleanId,
+        portalId: 'bnhs',
+        imageUrl: resolveOverviewImageLink(payload.imageUrl),
+        isDeleted: false,
+        createdAtIso: nowIso,
+        updatedAtIso: nowIso,
+      };
+    });
+
+    const newIds = newRecords.map((r) => r.id);
+    setDeletedGalleryIds((prev) => prev.filter((id) => !newIds.includes(id)));
+    setLocalGalleryItems((prev) => [
+      ...prev.filter((g) => !newIds.includes(g.id)),
+      ...newRecords,
+    ]);
+
+    const batchPromises = newRecords.map(async (record) => {
+      const docPath = `research_gallery/${record.id}`;
+      const exists = cloudGalleryItems.some((g) => g.id === record.id);
+      try {
+        if (exists) {
+          await updateDoc(doc(db, 'research_gallery', record.id), {
+            title: record.title.slice(0, 300),
+            caption: record.caption.slice(0, 1000),
+            imageUrl: record.imageUrl.slice(0, 750000),
+            displayOrder: record.displayOrder,
+            isDeleted: false,
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          await setDoc(doc(db, 'research_gallery', record.id), {
+            portalId: 'bnhs',
+            title: record.title.slice(0, 300),
+            caption: record.caption.slice(0, 1000),
+            imageUrl: record.imageUrl.slice(0, 750000),
+            displayOrder: record.displayOrder,
+            isDeleted: false,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, docPath);
+      }
+    });
+
+    await Promise.all(batchPromises);
+    showToast(`Successfully saved ${newRecords.length} gallery pictures (1000 × 500) to Cloud Database.`);
   };
 
   const handleDeleteGalleryItem = async (itemId: string) => {
@@ -4019,6 +4098,7 @@ export default function App() {
                 emailAlertLogs={emailAlertLogs}
                 galleryItems={activeGalleryItems}
                 onSaveGalleryItem={handleSaveGalleryItem}
+                onBulkSaveGalleryItems={handleBulkSaveGalleryItems}
                 onDeleteGalleryItem={handleDeleteGalleryItem}
                 onDeleteAllGalleryItems={handleDeleteAllGalleryItems}
                 onResetGalleryDefaults={handleResetGalleryDefaults}

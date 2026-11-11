@@ -198,7 +198,7 @@ service cloud.firestore {
         data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
         data.itemType is string && data.itemType.size() <= 20 &&
         (data.itemType == 'hero' || data.itemType == 'card') &&
-        data.code is string && data.code.size() >= 1 && data.code.size() <= 40 &&
+        data.code is string && data.code.size() >= 1 && data.code.size() <= 120 &&
         data.title is string && data.title.size() >= 2 && data.title.size() <= 300 &&
         data.subtitle is string && data.subtitle.size() >= 1 && data.subtitle.size() <= 200 &&
         data.description is string && data.description.size() >= 5 && data.description.size() <= 2000 &&
