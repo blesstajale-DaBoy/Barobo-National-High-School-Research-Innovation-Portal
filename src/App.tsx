@@ -2542,7 +2542,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F5] text-zinc-900">
       {/* STRICT 3-ZONE TOP BAR CONTRACT */}
-      <header className="sticky top-0 z-40 flex items-center justify-between gap-8 px-6 lg:px-10 py-3.5 bg-[#6B1420] text-white border-b border-rose-950">
+      <header className="sticky top-0 z-40 flex items-center justify-between gap-3 sm:gap-6 lg:gap-8 px-3 sm:px-6 lg:px-10 py-2.5 sm:py-3.5 bg-[#6B1420] text-white border-b border-rose-950">
         {/* Zone 1: Brand with BNHS GIF Logo beside BNHS Research Portal */}
         <button
           type="button"
@@ -2552,18 +2552,18 @@ export default function App() {
             setSelectedCategoryFilter('all');
             setSelectedSubcategoryFilter('all');
           }}
-          className="inline-flex items-center gap-3 text-lg font-display font-bold tracking-tight text-white whitespace-nowrap shrink-0 text-left"
+          className="inline-flex items-center gap-2 sm:gap-3 text-sm sm:text-lg font-display font-bold tracking-tight text-white whitespace-nowrap shrink-0 text-left"
         >
           <img
             src="/assets/aistudio/BNHS_LOGO_animated.gif"
             alt="Barobo National High School Official Animated Seal (GIF)"
-            className="w-10 h-10 rounded-full object-contain bg-white p-0.5 shadow-sm shrink-0 bnhs-logo-animate"
+            className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-contain bg-white p-0.5 shadow-sm shrink-0 bnhs-logo-animate"
           />
-          <span>BNHS Research Portal</span>
+          <span className="truncate">BNHS Research Portal</span>
         </button>
 
         {/* Zone 2: 5 concise single-line navigation links */}
-        <nav className="hidden md:flex items-center gap-7 text-xs font-medium text-rose-100">
+        <nav className="hidden md:flex items-center gap-4 lg:gap-7 text-xs font-medium text-rose-100">
           <button
             type="button"
             onClick={() => {
@@ -2627,7 +2627,7 @@ export default function App() {
         </nav>
 
         {/* Zone 3: 1 primary action */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
             type="button"
             onClick={() =>
@@ -2639,7 +2639,7 @@ export default function App() {
                   : 'basic'
               )
             }
-            className="px-4 py-2 text-xs font-semibold text-zinc-950 bg-amber-400 hover:bg-amber-300 transition-colors whitespace-nowrap shrink-0"
+            className="px-2.5 py-1.5 sm:px-4 sm:py-2 text-[11px] sm:text-xs font-semibold text-zinc-950 bg-amber-400 hover:bg-amber-300 transition-colors whitespace-nowrap shrink-0"
           >
             Submit Research
           </button>

@@ -68,17 +68,17 @@ export const ResearchInformationSection: React.FC<ResearchInformationSectionProp
         </div>
       </div>
 
-      {/* Main 1000 x 500 Research Information Video Frame */}
+      {/* Main 1000 x 500 Responsive Research Information Video Frame */}
       <div
-        className="w-full max-w-[1000px] h-[500px] mx-auto bg-zinc-950 border border-zinc-300 relative overflow-hidden shadow-lg flex flex-col justify-between"
+        className="w-full max-w-[1000px] md:h-[500px] mx-auto bg-zinc-950 border border-zinc-300 relative overflow-hidden shadow-lg flex flex-col justify-between"
       >
         {/* Top Header Strip inside 1000x500 box */}
-        <div className="px-5 py-2.5 bg-[#6B1420] text-white flex items-center justify-between gap-4 border-b border-rose-950 shrink-0">
-          <div className="flex items-center gap-2.5 text-xs truncate">
-            <span className="bg-amber-400 text-zinc-950 font-mono font-bold px-2 py-0.5 text-[10px] tracking-wide uppercase shrink-0">
+        <div className="px-3 sm:px-5 py-2 sm:py-2.5 bg-[#6B1420] text-white flex items-center justify-between gap-3 border-b border-rose-950 shrink-0">
+          <div className="flex items-center gap-2 text-xs truncate">
+            <span className="bg-amber-400 text-zinc-950 font-mono font-bold px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] tracking-wide uppercase shrink-0">
               VIDEO ONLY · 1000 × 500
             </span>
-            <span className="text-rose-100 font-medium truncate">
+            <span className="text-rose-100 font-medium truncate text-xs">
               {currentItem.category || 'Barobo NHS Research Protocols'}
             </span>
           </div>
@@ -100,7 +100,7 @@ export const ResearchInformationSection: React.FC<ResearchInformationSectionProp
               </span>
             )}
 
-            <div className="flex items-center gap-1 ml-2">
+            <div className="flex items-center gap-1 ml-1 sm:ml-2">
               <button
                 type="button"
                 onClick={handlePrev}
@@ -128,14 +128,14 @@ export const ResearchInformationSection: React.FC<ResearchInformationSectionProp
         {/* 2-Column Split Content inside 1000x500 container: Video Player (Left) & Guidance Summary (Right) */}
         <div className="flex-1 grid grid-cols-1 md:grid-cols-12 min-h-0 bg-zinc-900">
           {/* Left Column: Interactive Video Player (YouTube, Google Drive, or HTML5 Video) */}
-          <div className="md:col-span-7 h-full bg-black relative flex items-center justify-center overflow-hidden border-b md:border-b-0 md:border-r border-zinc-800">
+          <div className="md:col-span-7 aspect-video md:aspect-auto md:h-full bg-black relative flex items-center justify-center overflow-hidden border-b md:border-b-0 md:border-r border-zinc-800">
             {videoData.type !== 'none' && videoData.embedUrl ? (
               videoData.isEmbeddableIframe ? (
                 <iframe
                   key={`${currentItem.id}_${videoData.embedUrl}`}
                   src={videoData.embedUrl}
                   title={currentItem.title}
-                  className="w-full h-full border-0 bg-black"
+                  className="w-full h-full border-0 bg-black min-h-[200px] md:min-h-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowFullScreen
                 />
@@ -144,7 +144,7 @@ export const ResearchInformationSection: React.FC<ResearchInformationSectionProp
                   key={`${currentItem.id}_${videoData.embedUrl}`}
                   controls
                   playsInline
-                  className="w-full h-full object-contain bg-black"
+                  className="w-full h-full object-contain bg-black min-h-[200px] md:min-h-0"
                   src={videoData.embedUrl}
                 >
                   Your browser does not support HTML5 video playback.
@@ -162,7 +162,7 @@ export const ResearchInformationSection: React.FC<ResearchInformationSectionProp
           </div>
 
           {/* Right Column: Title, Category, Description & Reference Link */}
-          <div className="md:col-span-5 p-5 md:p-6 flex flex-col justify-between bg-white overflow-y-auto">
+          <div className="md:col-span-5 p-4 sm:p-5 md:p-6 flex flex-col justify-between bg-white overflow-y-auto">
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-semibold text-[#6B1420] uppercase tracking-wide border-b border-[#6B1420]/30 pb-0.5">

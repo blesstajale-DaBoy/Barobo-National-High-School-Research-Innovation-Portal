@@ -134,7 +134,7 @@ export const OverviewAnalyticsSection: React.FC<OverviewAnalyticsSectionProps> =
   return (
     <section
       aria-label="Research Repository Data Visualization"
-      className="bg-white border border-zinc-200 p-6 md:p-8 space-y-6"
+      className="bg-white border border-zinc-200 p-4 sm:p-6 md:p-8 space-y-6"
     >
       {/* Top Header with Live Cloud Synced Auto-Save Status */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-zinc-200 pb-5">
@@ -271,7 +271,7 @@ export const OverviewAnalyticsSection: React.FC<OverviewAnalyticsSectionProps> =
           </div>
 
           {/* Interactive Division Breakdown Cards below Bar Chart */}
-          <div className="grid grid-cols-3 gap-2.5 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
             {divisionChartData.map((div) => (
               <button
                 key={div.id}
