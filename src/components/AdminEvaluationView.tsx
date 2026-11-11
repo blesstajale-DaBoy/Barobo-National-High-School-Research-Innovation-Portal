@@ -81,6 +81,8 @@ interface AdminEvaluationViewProps {
     item: Omit<ResearchGalleryItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>
   ) => Promise<void>;
   onDeleteGalleryItem?: (itemId: string) => Promise<void>;
+  onDeleteAllGalleryItems?: () => Promise<void>;
+  onResetGalleryDefaults?: () => Promise<void>;
   informationItems?: ResearchInformationItemRecord[];
   onSaveInformationItem?: (
     item: Omit<ResearchInformationItemRecord, 'portalId' | 'createdAtIso' | 'updatedAtIso'>
@@ -109,6 +111,8 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
   galleryItems = [],
   onSaveGalleryItem,
   onDeleteGalleryItem,
+  onDeleteAllGalleryItems,
+  onResetGalleryDefaults,
   informationItems = [],
   onSaveInformationItem,
   onDeleteInformationItem,
@@ -150,6 +154,8 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
   const [savingGallery, setSavingGallery] = useState<boolean>(false);
   const [galFeedback, setGalFeedback] = useState<string>('');
   const [confirmDeleteGalId, setConfirmDeleteGalId] = useState<string | null>(null);
+  const [confirmDeleteAllGal, setConfirmDeleteAllGal] = useState<boolean>(false);
+  const [deletingGalleryBusy, setDeletingGalleryBusy] = useState<boolean>(false);
 
   // Research Information Manager State (1000 x 500 Videos - YouTube & Google Drive)
   const [isInfoFormOpen, setIsInfoFormOpen] = useState<boolean>(false);
@@ -979,6 +985,73 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                   <Plus className="w-3.5 h-3.5" />
                   <span>Add Picture to Gallery (1000 × 500)</span>
                 </button>
+
+                {onResetGalleryDefaults && (
+                  <button
+                    type="button"
+                    disabled={deletingGalleryBusy}
+                    onClick={async () => {
+                      setDeletingGalleryBusy(true);
+                      setConfirmDeleteAllGal(false);
+                      setConfirmDeleteGalId(null);
+                      try {
+                        await onResetGalleryDefaults();
+                        setGalFeedback('Default Research Gallery pictures (1000 × 500) have been restored.');
+                      } finally {
+                        setDeletingGalleryBusy(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-zinc-700 bg-zinc-100 border border-zinc-300 hover:bg-zinc-200 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Restore Default Pictures</span>
+                  </button>
+                )}
+
+                {onDeleteAllGalleryItems && galleryItems.length > 0 && (
+                  confirmDeleteAllGal ? (
+                    <div className="inline-flex items-center gap-1.5 bg-red-50 border border-red-200 px-2.5 py-1">
+                      <span className="text-[11px] font-semibold text-red-800">
+                        Delete all {galleryItems.length} pictures?
+                      </span>
+                      <button
+                        type="button"
+                        disabled={deletingGalleryBusy}
+                        onClick={async () => {
+                          setDeletingGalleryBusy(true);
+                          try {
+                            await onDeleteAllGalleryItems();
+                            setConfirmDeleteAllGal(false);
+                            setConfirmDeleteGalId(null);
+                            setGalFeedback('All Research Gallery pictures have been deleted.');
+                          } finally {
+                            setDeletingGalleryBusy(false);
+                          }
+                        }}
+                        className="px-2.5 py-1 text-xs font-semibold text-white bg-red-700 hover:bg-red-800 disabled:opacity-50"
+                      >
+                        {deletingGalleryBusy ? 'Deleting...' : 'Confirm Delete All'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteAllGal(false)}
+                        className="px-2 py-1 text-xs text-zinc-600 hover:text-zinc-900"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={deletingGalleryBusy}
+                      onClick={() => setConfirmDeleteAllGal(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete All Pictures ({galleryItems.length})</span>
+                    </button>
+                  )
+                )}
               </div>
             </div>
 
@@ -1149,91 +1222,110 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
             )}
 
             {/* Gallery Items Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {galleryItems.map((item, idx) => (
-                <div
-                  key={item.id}
-                  className="border border-zinc-200 bg-[#FAF9F5] flex flex-col justify-between overflow-hidden shadow-sm"
-                >
-                  <div>
-                    {/* Exact 1000 x 500 aspect ratio box */}
-                    <div className="w-full aspect-[1000/500] bg-zinc-900 relative overflow-hidden flex items-center justify-center">
-                      {item.imageUrl ? (
-                        <img
-                          src={resolveOverviewImageLink(item.imageUrl)}
-                          alt={item.title}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="text-center p-4 text-xs text-zinc-400">
-                          No Photo Provided
+            {galleryItems.length === 0 ? (
+              <div className="p-8 bg-[#FAF9F5] border border-dashed border-zinc-300 text-center space-y-3">
+                <ImageIcon className="w-8 h-8 text-zinc-400 mx-auto" />
+                <div className="text-sm font-display font-semibold text-zinc-800">
+                  No Pictures in Research Gallery
+                </div>
+                <p className="text-xs text-zinc-600 max-w-md mx-auto">
+                  All gallery pictures have been removed. Click &ldquo;Add Picture to Gallery (1000 × 500)&rdquo; to upload new sliding photos, or click &ldquo;Restore Default Pictures&rdquo; above.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {galleryItems.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className="border border-zinc-200 bg-[#FAF9F5] flex flex-col justify-between overflow-hidden shadow-sm"
+                  >
+                    <div>
+                      {/* Exact 1000 x 500 aspect ratio box */}
+                      <div className="w-full aspect-[1000/500] bg-zinc-900 relative overflow-hidden flex items-center justify-center">
+                        {item.imageUrl ? (
+                          <img
+                            src={resolveOverviewImageLink(item.imageUrl)}
+                            alt={item.title}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="text-center p-4 text-xs text-zinc-400">
+                            No Photo Provided
+                          </div>
+                        )}
+                        <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#6B1420] text-white text-[10px] font-mono font-semibold">
+                          Slide {idx + 1} · Order {item.displayOrder}
                         </div>
-                      )}
-                      <div className="absolute top-2 left-2 px-2 py-0.5 bg-[#6B1420] text-white text-[10px] font-mono font-semibold">
-                        Slide {idx + 1} · Order {item.displayOrder}
+                        <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-black/60 text-white text-[10px] font-mono">
+                          1000 × 500
+                        </div>
                       </div>
-                      <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-black/60 text-white text-[10px] font-mono">
-                        1000 × 500
+                      <div className="p-4 space-y-1.5">
+                        <h4 className="text-sm font-display font-semibold text-zinc-900 line-clamp-1">
+                          {item.title}
+                        </h4>
+                        <p className="text-xs text-zinc-600 line-clamp-2">
+                          {item.caption}
+                        </p>
                       </div>
                     </div>
-                    <div className="p-4 space-y-1.5">
-                      <h4 className="text-sm font-display font-semibold text-zinc-900 line-clamp-1">
-                        {item.title}
-                      </h4>
-                      <p className="text-xs text-zinc-600 line-clamp-2">
-                        {item.caption}
-                      </p>
-                    </div>
-                  </div>
 
-                  <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => openEditGalleryItem(item)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>Edit (1000 × 500)</span>
-                    </button>
-
-                    {confirmDeleteGalId === item.id ? (
-                      <div className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (onDeleteGalleryItem) {
-                              await onDeleteGalleryItem(item.id);
-                              setConfirmDeleteGalId(null);
-                              setGalFeedback(`Deleted picture "${item.title}" from Gallery.`);
-                            }
-                          }}
-                          className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteGalId(null)}
-                          className="px-1.5 py-1 text-[11px] text-zinc-600"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
+                    <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
                       <button
                         type="button"
-                        onClick={() => setConfirmDeleteGalId(item.id)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
+                        onClick={() => openEditGalleryItem(item)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete</span>
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit (1000 × 500)</span>
                       </button>
-                    )}
+
+                      {confirmDeleteGalId === item.id ? (
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={deletingGalleryBusy}
+                            onClick={async () => {
+                              if (onDeleteGalleryItem) {
+                                setDeletingGalleryBusy(true);
+                                try {
+                                  await onDeleteGalleryItem(item.id);
+                                  setConfirmDeleteGalId(null);
+                                  setGalFeedback(`Deleted picture "${item.title}" from Gallery.`);
+                                } finally {
+                                  setDeletingGalleryBusy(false);
+                                }
+                              }
+                            }}
+                            className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800 disabled:opacity-50"
+                          >
+                            {deletingGalleryBusy ? 'Deleting...' : 'Confirm'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteGalId(null)}
+                            className="px-1.5 py-1 text-[11px] text-zinc-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={deletingGalleryBusy}
+                          onClick={() => setConfirmDeleteGalId(item.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 disabled:opacity-50 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

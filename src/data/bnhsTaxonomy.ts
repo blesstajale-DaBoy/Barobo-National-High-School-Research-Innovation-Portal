@@ -1203,6 +1203,7 @@ export interface ResearchGalleryItemRecord {
   caption: string;
   imageUrl: string;
   displayOrder: number;
+  isDeleted?: boolean;
   createdAtIso: string;
   updatedAtIso: string;
   isBaseline?: boolean;
@@ -1219,6 +1220,7 @@ export interface ResearchInformationItemRecord {
   imageUrl?: string;
   linkUrl?: string;
   displayOrder: number;
+  isDeleted?: boolean;
   createdAtIso: string;
   updatedAtIso: string;
   isBaseline?: boolean;

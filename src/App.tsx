@@ -114,7 +114,9 @@ const LOCAL_SUBSCRIPTIONS_KEY = 'bnhs_notify_subscriptions_v1';
 const LOCAL_EMAIL_ALERTS_KEY = 'bnhs_email_alerts_log_v1';
 const LOCAL_OVERVIEW_ITEMS_KEY = 'bnhs_overview_items_v1';
 const LOCAL_RESEARCH_GALLERY_KEY = 'bnhs_research_gallery_v1';
+const LOCAL_DELETED_GALLERY_IDS_KEY = 'bnhs_deleted_gallery_ids_v1';
 const LOCAL_RESEARCH_INFO_KEY = 'bnhs_research_info_v1';
+const LOCAL_DELETED_INFO_IDS_KEY = 'bnhs_deleted_info_ids_v1';
 const LOCAL_RESEARCH_OVERRIDES_KEY = 'bnhs_local_researches_v1';
 const LOCAL_DELETED_RESEARCH_IDS_KEY = 'bnhs_deleted_research_ids_v1';
 const LOCAL_COMMENTS_KEY = 'bnhs_local_comments_v1';
@@ -201,17 +203,33 @@ export default function App() {
   const [localGalleryItems, setLocalGalleryItems] = useState<ResearchGalleryItemRecord[]>(() => {
     try {
       const raw = localStorage.getItem(LOCAL_RESEARCH_GALLERY_KEY);
-      return raw ? JSON.parse(raw) : INITIAL_RESEARCH_GALLERY;
+      return raw ? JSON.parse(raw) : [];
     } catch {
-      return INITIAL_RESEARCH_GALLERY;
+      return [];
+    }
+  });
+  const [deletedGalleryIds, setDeletedGalleryIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_DELETED_GALLERY_IDS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
     }
   });
   const [localInformationItems, setLocalInformationItems] = useState<ResearchInformationItemRecord[]>(() => {
     try {
       const raw = localStorage.getItem(LOCAL_RESEARCH_INFO_KEY);
-      return raw ? JSON.parse(raw) : INITIAL_RESEARCH_INFORMATION;
+      return raw ? JSON.parse(raw) : [];
     } catch {
-      return INITIAL_RESEARCH_INFORMATION;
+      return [];
+    }
+  });
+  const [deletedInformationIds, setDeletedInformationIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_DELETED_INFO_IDS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
     }
   });
   const [localProfiles, setLocalProfiles] = useState<ResearcherProfileRecord[]>(() => {
@@ -337,6 +355,46 @@ export default function App() {
       // ignore
     }
   }, [localOverviewItems]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) return;
+    try {
+      localStorage.setItem(LOCAL_RESEARCH_GALLERY_KEY, JSON.stringify(localGalleryItems));
+      markAutoSynced();
+    } catch {
+      // ignore
+    }
+  }, [localGalleryItems]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) return;
+    try {
+      localStorage.setItem(LOCAL_DELETED_GALLERY_IDS_KEY, JSON.stringify(deletedGalleryIds));
+      markAutoSynced();
+    } catch {
+      // ignore
+    }
+  }, [deletedGalleryIds]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) return;
+    try {
+      localStorage.setItem(LOCAL_RESEARCH_INFO_KEY, JSON.stringify(localInformationItems));
+      markAutoSynced();
+    } catch {
+      // ignore
+    }
+  }, [localInformationItems]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) return;
+    try {
+      localStorage.setItem(LOCAL_DELETED_INFO_IDS_KEY, JSON.stringify(deletedInformationIds));
+      markAutoSynced();
+    } catch {
+      // ignore
+    }
+  }, [deletedInformationIds]);
 
   useEffect(() => {
     if (!hasMountedRef.current) return;
@@ -650,6 +708,7 @@ export default function App() {
             caption: String(d.caption || ''),
             imageUrl: String(d.imageUrl || ''),
             displayOrder: Number(d.displayOrder || 0),
+            isDeleted: Boolean(d.isDeleted),
             createdAtIso: d.createdAt?.toDate
               ? d.createdAt.toDate().toISOString()
               : new Date().toISOString(),
@@ -689,6 +748,7 @@ export default function App() {
             imageUrl: String(d.imageUrl || ''),
             linkUrl: String(d.linkUrl || ''),
             displayOrder: Number(d.displayOrder || 0),
+            isDeleted: Boolean(d.isDeleted),
             createdAtIso: d.createdAt?.toDate
               ? d.createdAt.toDate().toISOString()
               : new Date().toISOString(),
@@ -960,30 +1020,64 @@ export default function App() {
   }, [activeOverviewItems]);
 
   const activeGalleryItems = useMemo(() => {
+    const deletedSet = new Set(deletedGalleryIds);
     const map = new Map<string, ResearchGalleryItemRecord>();
-    INITIAL_RESEARCH_GALLERY.forEach((g) => map.set(g.id, g));
-    cloudGalleryItems.forEach((g) => map.set(g.id, g));
-    localGalleryItems.forEach((g) => {
-      const existing = map.get(g.id);
-      if (!existing || g.updatedAtIso >= existing.updatedAtIso) {
+    INITIAL_RESEARCH_GALLERY.forEach((g) => {
+      if (!deletedSet.has(g.id)) {
         map.set(g.id, g);
       }
     });
-    return Array.from(map.values()).sort((a, b) => a.displayOrder - b.displayOrder);
-  }, [cloudGalleryItems, localGalleryItems]);
+    cloudGalleryItems.forEach((g) => {
+      if (g.isDeleted || deletedSet.has(g.id)) {
+        map.delete(g.id);
+      } else {
+        map.set(g.id, g);
+      }
+    });
+    localGalleryItems.forEach((g) => {
+      if (g.isDeleted || deletedSet.has(g.id)) {
+        map.delete(g.id);
+      } else {
+        const existing = map.get(g.id);
+        if (!existing || g.updatedAtIso >= existing.updatedAtIso) {
+          map.set(g.id, g);
+        }
+      }
+    });
+    return Array.from(map.values())
+      .filter((g) => !g.isDeleted && !deletedSet.has(g.id))
+      .sort((a, b) => a.displayOrder - b.displayOrder);
+  }, [cloudGalleryItems, localGalleryItems, deletedGalleryIds]);
 
   const activeInformationItems = useMemo(() => {
+    const deletedSet = new Set(deletedInformationIds);
     const map = new Map<string, ResearchInformationItemRecord>();
-    INITIAL_RESEARCH_INFORMATION.forEach((inf) => map.set(inf.id, inf));
-    cloudInformationItems.forEach((inf) => map.set(inf.id, inf));
-    localInformationItems.forEach((inf) => {
-      const existing = map.get(inf.id);
-      if (!existing || inf.updatedAtIso >= existing.updatedAtIso) {
+    INITIAL_RESEARCH_INFORMATION.forEach((inf) => {
+      if (!deletedSet.has(inf.id)) {
         map.set(inf.id, inf);
       }
     });
-    return Array.from(map.values()).sort((a, b) => a.displayOrder - b.displayOrder);
-  }, [cloudInformationItems, localInformationItems]);
+    cloudInformationItems.forEach((inf) => {
+      if (inf.isDeleted || deletedSet.has(inf.id)) {
+        map.delete(inf.id);
+      } else {
+        map.set(inf.id, inf);
+      }
+    });
+    localInformationItems.forEach((inf) => {
+      if (inf.isDeleted || deletedSet.has(inf.id)) {
+        map.delete(inf.id);
+      } else {
+        const existing = map.get(inf.id);
+        if (!existing || inf.updatedAtIso >= existing.updatedAtIso) {
+          map.set(inf.id, inf);
+        }
+      }
+    });
+    return Array.from(map.values())
+      .filter((inf) => !inf.isDeleted && !deletedSet.has(inf.id))
+      .sort((a, b) => a.displayOrder - b.displayOrder);
+  }, [cloudInformationItems, localInformationItems, deletedInformationIds]);
 
   // Keep detail modal synced if record updates
   useEffect(() => {
@@ -1340,10 +1434,12 @@ export default function App() {
       id: cleanId,
       portalId: 'bnhs',
       imageUrl: resolveOverviewImageLink(payload.imageUrl),
+      isDeleted: false,
       createdAtIso: nowIso,
       updatedAtIso: nowIso,
     };
 
+    setDeletedGalleryIds((prev) => prev.filter((id) => id !== cleanId && id !== payload.id));
     setLocalGalleryItems((prev) => [
       ...prev.filter((g) => g.id !== cleanId),
       record,
@@ -1358,6 +1454,7 @@ export default function App() {
           caption: record.caption.slice(0, 1000),
           imageUrl: record.imageUrl.slice(0, 750000),
           displayOrder: record.displayOrder,
+          isDeleted: false,
           updatedAt: serverTimestamp(),
         });
       } else {
@@ -1367,6 +1464,7 @@ export default function App() {
           caption: record.caption.slice(0, 1000),
           imageUrl: record.imageUrl.slice(0, 750000),
           displayOrder: record.displayOrder,
+          isDeleted: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -1379,17 +1477,127 @@ export default function App() {
 
   const handleDeleteGalleryItem = async (itemId: string) => {
     const cleanId = sanitizeId(itemId);
-    setLocalGalleryItems((prev) => prev.filter((g) => g.id !== cleanId));
-    const exists = cloudGalleryItems.some((g) => g.id === cleanId);
-    if (exists) {
-      const docPath = `research_gallery/${cleanId}`;
-      try {
+    const target =
+      activeGalleryItems.find((g) => g.id === itemId || g.id === cleanId) ||
+      INITIAL_RESEARCH_GALLERY.find((g) => g.id === itemId || g.id === cleanId);
+
+    setDeletedGalleryIds((prev) =>
+      prev.includes(cleanId) ? prev : [...prev, cleanId, itemId]
+    );
+    setLocalGalleryItems((prev) => prev.filter((g) => g.id !== cleanId && g.id !== itemId));
+
+    const isBaselineItem = INITIAL_RESEARCH_GALLERY.some(
+      (g) => g.id === cleanId || g.id === itemId
+    );
+    const existsInCloud = cloudGalleryItems.some((g) => g.id === cleanId);
+    const docPath = `research_gallery/${cleanId}`;
+
+    try {
+      if (isBaselineItem) {
+        await setDoc(doc(db, 'research_gallery', cleanId), {
+          portalId: 'bnhs',
+          title: (target?.title || 'Deleted Gallery Picture').slice(0, 300),
+          caption: (target?.caption || '').slice(0, 1000),
+          imageUrl: (target?.imageUrl || '').slice(0, 750000),
+          displayOrder: Number(target?.displayOrder || 1),
+          isDeleted: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else if (existsInCloud) {
         await deleteDoc(doc(db, 'research_gallery', cleanId));
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, docPath);
       }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, docPath);
     }
     showToast('Picture removed from Research Gallery.');
+  };
+
+  const handleDeleteAllGalleryItems = async () => {
+    const allIds = Array.from(
+      new Set([
+        ...INITIAL_RESEARCH_GALLERY.map((g) => g.id),
+        ...cloudGalleryItems.map((g) => g.id),
+        ...localGalleryItems.map((g) => g.id),
+        ...activeGalleryItems.map((g) => g.id),
+      ])
+    );
+
+    setDeletedGalleryIds(allIds);
+    setLocalGalleryItems([]);
+
+    for (const baseItem of INITIAL_RESEARCH_GALLERY) {
+      const cleanId = sanitizeId(baseItem.id);
+      try {
+        await setDoc(doc(db, 'research_gallery', cleanId), {
+          portalId: 'bnhs',
+          title: baseItem.title.slice(0, 300),
+          caption: baseItem.caption.slice(0, 1000),
+          imageUrl: baseItem.imageUrl.slice(0, 750000),
+          displayOrder: baseItem.displayOrder,
+          isDeleted: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    const baselineSet = new Set(INITIAL_RESEARCH_GALLERY.map((g) => sanitizeId(g.id)));
+    for (const cloudItem of cloudGalleryItems) {
+      if (!baselineSet.has(cloudItem.id)) {
+        try {
+          await deleteDoc(doc(db, 'research_gallery', cloudItem.id));
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    showToast('All pictures deleted from Research Gallery.');
+  };
+
+  const handleResetGalleryDefaults = async () => {
+    const nowIso = new Date().toISOString();
+    setDeletedGalleryIds([]);
+    const restored = INITIAL_RESEARCH_GALLERY.map((g) => ({
+      ...g,
+      isDeleted: false,
+      updatedAtIso: nowIso,
+    }));
+    setLocalGalleryItems(restored);
+
+    const baselineSet = new Set(INITIAL_RESEARCH_GALLERY.map((g) => sanitizeId(g.id)));
+    for (const cloudItem of cloudGalleryItems) {
+      if (!baselineSet.has(cloudItem.id)) {
+        try {
+          await deleteDoc(doc(db, 'research_gallery', cloudItem.id));
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    for (const baseItem of INITIAL_RESEARCH_GALLERY) {
+      const cleanId = sanitizeId(baseItem.id);
+      try {
+        await setDoc(doc(db, 'research_gallery', cleanId), {
+          portalId: 'bnhs',
+          title: baseItem.title.slice(0, 300),
+          caption: baseItem.caption.slice(0, 1000),
+          imageUrl: baseItem.imageUrl.slice(0, 750000),
+          displayOrder: baseItem.displayOrder,
+          isDeleted: false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    showToast('Default Research Gallery pictures restored.');
   };
 
   // Research Information Video Handlers (1000 x 500 Videos - YouTube & Google Drive)
@@ -1405,10 +1613,12 @@ export default function App() {
       videoUrl: payload.videoUrl || '',
       videoSourceType: payload.videoSourceType || 'youtube',
       imageUrl: payload.imageUrl || '',
+      isDeleted: false,
       createdAtIso: nowIso,
       updatedAtIso: nowIso,
     };
 
+    setDeletedInformationIds((prev) => prev.filter((id) => id !== cleanId && id !== payload.id));
     setLocalInformationItems((prev) => [
       ...prev.filter((i) => i.id !== cleanId),
       record,
@@ -1427,6 +1637,7 @@ export default function App() {
           imageUrl: (record.imageUrl || '').slice(0, 750000),
           linkUrl: (record.linkUrl || '').slice(0, 500),
           displayOrder: record.displayOrder,
+          isDeleted: false,
           updatedAt: serverTimestamp(),
         });
       } else {
@@ -1440,6 +1651,7 @@ export default function App() {
           imageUrl: (record.imageUrl || '').slice(0, 750000),
           linkUrl: (record.linkUrl || '').slice(0, 500),
           displayOrder: record.displayOrder,
+          isDeleted: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -1452,15 +1664,42 @@ export default function App() {
 
   const handleDeleteInformationItem = async (itemId: string) => {
     const cleanId = sanitizeId(itemId);
-    setLocalInformationItems((prev) => prev.filter((i) => i.id !== cleanId));
-    const exists = cloudInformationItems.some((i) => i.id === cleanId);
-    if (exists) {
-      const docPath = `research_information/${cleanId}`;
-      try {
+    const target =
+      activeInformationItems.find((i) => i.id === itemId || i.id === cleanId) ||
+      INITIAL_RESEARCH_INFORMATION.find((i) => i.id === itemId || i.id === cleanId);
+
+    setDeletedInformationIds((prev) =>
+      prev.includes(cleanId) ? prev : [...prev, cleanId, itemId]
+    );
+    setLocalInformationItems((prev) => prev.filter((i) => i.id !== cleanId && i.id !== itemId));
+
+    const isBaselineItem = INITIAL_RESEARCH_INFORMATION.some(
+      (i) => i.id === cleanId || i.id === itemId
+    );
+    const existsInCloud = cloudInformationItems.some((i) => i.id === cleanId);
+    const docPath = `research_information/${cleanId}`;
+
+    try {
+      if (isBaselineItem) {
+        await setDoc(doc(db, 'research_information', cleanId), {
+          portalId: 'bnhs',
+          title: (target?.title || 'Deleted Video').slice(0, 300),
+          category: (target?.category || '').slice(0, 120),
+          description: (target?.description || '').slice(0, 3000),
+          videoUrl: (target?.videoUrl || '').slice(0, 750000),
+          videoSourceType: (target?.videoSourceType || 'youtube').slice(0, 30),
+          imageUrl: (target?.imageUrl || '').slice(0, 750000),
+          linkUrl: (target?.linkUrl || '').slice(0, 500),
+          displayOrder: Number(target?.displayOrder || 1),
+          isDeleted: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else if (existsInCloud) {
         await deleteDoc(doc(db, 'research_information', cleanId));
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, docPath);
       }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, docPath);
     }
     showToast('Topic removed from Research Information.');
   };
@@ -3781,6 +4020,8 @@ export default function App() {
                 galleryItems={activeGalleryItems}
                 onSaveGalleryItem={handleSaveGalleryItem}
                 onDeleteGalleryItem={handleDeleteGalleryItem}
+                onDeleteAllGalleryItems={handleDeleteAllGalleryItems}
+                onResetGalleryDefaults={handleResetGalleryDefaults}
                 informationItems={activeInformationItems}
                 onSaveInformationItem={handleSaveInformationItem}
                 onDeleteInformationItem={handleDeleteInformationItem}

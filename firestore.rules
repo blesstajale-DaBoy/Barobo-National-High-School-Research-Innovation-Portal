@@ -250,13 +250,14 @@ service cloud.firestore {
           'portalId', 'title', 'caption', 'imageUrl', 'displayOrder', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'portalId', 'title', 'caption', 'imageUrl', 'displayOrder', 'createdAt', 'updatedAt'
+          'portalId', 'title', 'caption', 'imageUrl', 'displayOrder', 'isDeleted', 'createdAt', 'updatedAt'
         ]) &&
         data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
         data.caption is string && data.caption.size() <= 1000 &&
         data.imageUrl is string && data.imageUrl.size() <= 750000 &&
         data.displayOrder is number && data.displayOrder >= 0 && data.displayOrder <= 1000 &&
+        (!('isDeleted' in data) || data.isDeleted is bool) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -266,7 +267,7 @@ service cloud.firestore {
           'portalId', 'title', 'category', 'description', 'videoUrl', 'videoSourceType', 'imageUrl', 'linkUrl', 'displayOrder', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'portalId', 'title', 'category', 'description', 'videoUrl', 'videoSourceType', 'imageUrl', 'linkUrl', 'displayOrder', 'createdAt', 'updatedAt'
+          'portalId', 'title', 'category', 'description', 'videoUrl', 'videoSourceType', 'imageUrl', 'linkUrl', 'displayOrder', 'isDeleted', 'createdAt', 'updatedAt'
         ]) &&
         data.portalId is string && data.portalId.size() == 4 && data.portalId == 'bnhs' &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
@@ -277,6 +278,7 @@ service cloud.firestore {
         data.imageUrl is string && data.imageUrl.size() <= 750000 &&
         data.linkUrl is string && data.linkUrl.size() <= 500 &&
         data.displayOrder is number && data.displayOrder >= 0 && data.displayOrder <= 1000 &&
+        (!('isDeleted' in data) || data.isDeleted is bool) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }

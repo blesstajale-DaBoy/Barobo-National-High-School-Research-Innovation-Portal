@@ -613,6 +613,9 @@
         "displayOrder": {
           "type": "number"
         },
+        "isDeleted": {
+          "type": "boolean"
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time"
@@ -665,6 +668,9 @@
         },
         "displayOrder": {
           "type": "number"
+        },
+        "isDeleted": {
+          "type": "boolean"
         },
         "createdAt": {
           "type": "string",

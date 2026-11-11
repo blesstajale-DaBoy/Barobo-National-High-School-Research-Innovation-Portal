@@ -31,8 +31,15 @@ export const ResearchGallerySection: React.FC<ResearchGallerySectionProps> = ({
   const intervalStepMs = 100;
   const progressTimerRef = useRef<number | null>(null);
 
-  // Filter out any invalid items
-  const validItems = items.length > 0 ? items : [];
+  // Filter out any invalid or deleted items
+  const validItems = items.filter((item) => !item.isDeleted);
+
+  useEffect(() => {
+    if (validItems.length > 0 && currentIndex >= validItems.length) {
+      setCurrentIndex(0);
+      setProgress(0);
+    }
+  }, [validItems.length, currentIndex]);
 
   const handleNext = () => {
     if (validItems.length <= 1) return;
@@ -72,7 +79,8 @@ export const ResearchGallerySection: React.FC<ResearchGallerySectionProps> = ({
 
   if (validItems.length === 0) return null;
 
-  const currentItem = validItems[currentIndex] || validItems[0];
+  const safeIndex = currentIndex < validItems.length ? currentIndex : 0;
+  const currentItem = validItems[safeIndex] || validItems[0];
   const resolvedImg = resolveOverviewImageLink(currentItem.imageUrl);
 
   return (
