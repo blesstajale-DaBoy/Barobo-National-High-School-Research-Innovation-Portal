@@ -1422,6 +1422,7 @@ export interface PublishedJournalRecord {
   createdAtIso: string;
   updatedAtIso: string;
   isBaseline?: boolean;
+  isDeleted?: boolean;
 }
 
 export const INITIAL_PUBLISHED_JOURNALS: PublishedJournalRecord[] = [

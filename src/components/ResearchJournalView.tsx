@@ -483,7 +483,7 @@ export function ResearchJournalView({
               </div>
 
               {/* Card Footer Actions */}
-              <div className="p-4 bg-[#FAF9F5] border-t border-zinc-200 flex flex-col gap-2.5">
+              <div className="p-4 bg-[#FAF9F5] border-t border-zinc-200 flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
@@ -527,54 +527,65 @@ export function ResearchJournalView({
                     >
                       <Download className="w-4 h-4" />
                     </button>
-
-                    {isAdmin && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingJournal(journal);
-                            setIsPublishModalOpen(true);
-                          }}
-                          className="p-1.5 text-zinc-600 hover:text-[#6B1420] bg-white border border-zinc-200 transition-colors"
-                          title="Edit manuscript details"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-
-                        {confirmDeleteId === journal.id ? (
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await onDeleteJournal(journal.id);
-                                setConfirmDeleteId(null);
-                              }}
-                              className="px-2 py-1 text-[10px] font-semibold text-white bg-red-700 hover:bg-red-800"
-                            >
-                              Confirm
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(null)}
-                              className="px-1.5 py-1 text-[10px] text-zinc-500"
-                            >
-                              X
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(journal.id)}
-                            className="p-1.5 text-zinc-400 hover:text-red-700 bg-white border border-zinc-200 transition-colors"
-                            title="Delete published journal"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </>
-                    )}
                   </div>
+                </div>
+
+                {/* Edit & Delete Controls Row */}
+                <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-zinc-200/80">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingJournal(journal);
+                      if (
+                        journal.fileSourceType === 'link' ||
+                        Boolean(journal.publishedLinkUrl)
+                      ) {
+                        setIsAddPublishedLinkModalOpen(true);
+                      } else {
+                        setIsPublishModalOpen(true);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:text-[#6B1420] bg-white border border-zinc-200 hover:border-[#6B1420] transition-colors"
+                    title="Edit published research details, link, or abstract"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-[#6B1420]" />
+                    <span>Edit</span>
+                  </button>
+
+                  {confirmDeleteId === journal.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-red-700 font-medium">
+                        Delete entry?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await onDeleteJournal(journal.id);
+                          setConfirmDeleteId(null);
+                        }}
+                        className="px-2.5 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800 transition-colors"
+                      >
+                        Confirm Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="px-2 py-1 text-[11px] font-medium text-zinc-600 hover:text-zinc-900 bg-white border border-zinc-200"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(journal.id)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-red-700 hover:text-white bg-white hover:bg-red-700 border border-red-200 hover:border-red-700 transition-colors"
+                      title="Delete this published research from Research Journal"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </article>
@@ -603,12 +614,24 @@ export function ResearchJournalView({
         }}
       />
 
-      {/* Add Already Published Research (Link & Abstract) Modal */}
+      {/* Add / Edit Already Published Research (Link & Abstract) Modal */}
       <AddPublishedLinkModal
         isOpen={isAddPublishedLinkModalOpen}
-        onClose={() => setIsAddPublishedLinkModalOpen(false)}
+        onClose={() => {
+          setIsAddPublishedLinkModalOpen(false);
+          setEditingJournal(null);
+        }}
+        editingJournal={editingJournal}
         onPublish={async (data) => {
-          await onPublishJournal(data);
+          if (editingJournal) {
+            await onEditJournal({
+              ...editingJournal,
+              ...data,
+              updatedAtIso: new Date().toISOString(),
+            });
+          } else {
+            await onPublishJournal(data);
+          }
         }}
       />
 
@@ -617,6 +640,20 @@ export function ResearchJournalView({
         journal={readingJournal}
         onClose={() => setReadingJournal(null)}
         onDownload={handleDownloadFile}
+        onEdit={(journal) => {
+          setEditingJournal(journal);
+          if (
+            journal.fileSourceType === 'link' ||
+            Boolean(journal.publishedLinkUrl)
+          ) {
+            setIsAddPublishedLinkModalOpen(true);
+          } else {
+            setIsPublishModalOpen(true);
+          }
+        }}
+        onDelete={async (journal) => {
+          await onDeleteJournal(journal.id);
+        }}
       />
     </section>
   );

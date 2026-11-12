@@ -737,9 +737,13 @@
           "type": "string",
           "maxLength": 2000
         },
+        "doiOrExternalLink": {
+          "type": "string",
+          "maxLength": 500
+        },
         "fileSourceType": {
           "type": "string",
-          "enum": ["local", "drive"],
+          "enum": ["local", "drive", "link"],
           "maxLength": 20
         },
         "fileName": {
@@ -761,6 +765,14 @@
           "type": "string",
           "maxLength": 500
         },
+        "publishedLinkUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "publishedVenue": {
+          "type": "string",
+          "maxLength": 300
+        },
         "citationApa": {
           "type": "string",
           "maxLength": 500
@@ -774,6 +786,12 @@
         "uploaderUid": {
           "type": "string",
           "maxLength": 128
+        },
+        "isBaseline": {
+          "type": "boolean"
+        },
+        "isDeleted": {
+          "type": "boolean"
         },
         "createdAt": {
           "type": "string",

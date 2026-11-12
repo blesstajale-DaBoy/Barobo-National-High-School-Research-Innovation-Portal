@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Link2,
@@ -25,6 +25,7 @@ interface AddPublishedLinkModalProps {
   onPublish: (
     journal: Omit<PublishedJournalRecord, 'id' | 'createdAtIso' | 'updatedAtIso'>
   ) => Promise<void> | void;
+  editingJournal?: PublishedJournalRecord | null;
   uploaderUid?: string;
 }
 
@@ -32,6 +33,7 @@ export function AddPublishedLinkModal({
   isOpen,
   onClose,
   onPublish,
+  editingJournal,
   uploaderUid = 'bnhs_user',
 }: AddPublishedLinkModalProps) {
   const [publishedLinkUrl, setPublishedLinkUrl] = useState('');
@@ -57,6 +59,60 @@ export function AddPublishedLinkModal({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setErrorMsg('');
+    if (editingJournal) {
+      setPublishedLinkUrl(
+        editingJournal.publishedLinkUrl ||
+          editingJournal.driveUrl ||
+          editingJournal.doiOrExternalLink ||
+          ''
+      );
+      setTitle(editingJournal.title || '');
+      setAuthors(editingJournal.authors || '');
+      setAuthorAffiliation(
+        editingJournal.authorAffiliation ||
+          'Barobo National High School — Science & Research Faculty'
+      );
+      setDivision(editingJournal.division || 'basic');
+      setPublishedVenue(
+        editingJournal.publishedVenue ||
+          'Barobo National High School Research Journal & DepEd Repository'
+      );
+      setJournalVolume(
+        editingJournal.journalVolume || 'Volume 4, Issue 1 (SY 2025–2026)'
+      );
+      setIssnOrRefCode(
+        editingJournal.issnOrRefCode ||
+          `BNHS-EXT-2026-00${Math.floor(Math.random() * 90) + 10}`
+      );
+      setPublicationDate(
+        editingJournal.publicationDate || new Date().toISOString().split('T')[0]
+      );
+      setAbstract(editingJournal.abstract || '');
+      setKeywords(editingJournal.keywords || '');
+      setKeyFindings(editingJournal.keyFindings || '');
+    } else {
+      setPublishedLinkUrl('');
+      setTitle('');
+      setAuthors('');
+      setAuthorAffiliation(
+        'Barobo National High School — Science & Research Faculty'
+      );
+      setDivision('basic');
+      setPublishedVenue(
+        'Barobo National High School Research Journal & DepEd Repository'
+      );
+      setJournalVolume('Volume 4, Issue 1 (SY 2025–2026)');
+      setIssnOrRefCode(`BNHS-EXT-2026-00${Math.floor(Math.random() * 90) + 10}`);
+      setPublicationDate(new Date().toISOString().split('T')[0]);
+      setAbstract('');
+      setKeywords('');
+      setKeyFindings('');
+    }
+  }, [editingJournal, isOpen]);
 
   if (!isOpen) return null;
 
@@ -123,15 +179,17 @@ export function AddPublishedLinkModal({
         keyFindings: keyFindings.trim(),
         doiOrExternalLink: publishedLinkUrl.trim(),
         fileSourceType: isDrive ? 'drive' : 'link',
-        fileName: `${title.trim().slice(0, 40).replace(/[^a-zA-Z0-9]/g, '_')}_published_link.pdf`,
+        fileName:
+          editingJournal?.fileName ||
+          `${title.trim().slice(0, 40).replace(/[^a-zA-Z0-9]/g, '_')}_published_link.pdf`,
         driveUrl: isDrive ? publishedLinkUrl.trim() : undefined,
         driveEmbedUrl: driveEmbed,
         publishedLinkUrl: publishedLinkUrl.trim(),
         publishedVenue: publishedVenue.trim(),
         citationApa: generateCitation(),
-        viewsCount: 1,
-        downloadsCount: 0,
-        uploaderUid,
+        viewsCount: editingJournal?.viewsCount || 1,
+        downloadsCount: editingJournal?.downloadsCount || 0,
+        uploaderUid: editingJournal?.uploaderUid || uploaderUid,
         isBaseline: false,
       };
 
@@ -159,7 +217,9 @@ export function AddPublishedLinkModal({
                 Research Journal · Link-Only Cataloging
               </div>
               <h2 className="text-base sm:text-lg font-display font-bold text-white">
-                Add Already Published Research (Link &amp; Abstract)
+                {editingJournal
+                  ? 'Edit Published Research (Link & Abstract)'
+                  : 'Add Already Published Research (Link & Abstract)'}
               </h2>
             </div>
           </div>
@@ -389,11 +449,11 @@ export function AddPublishedLinkModal({
             className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-zinc-950 bg-amber-400 hover:bg-amber-300 transition-colors shadow-sm disabled:opacity-50"
           >
             {isSubmitting ? (
-              <span>Cataloging Research...</span>
+              <span>{editingJournal ? 'Saving Changes...' : 'Cataloging Research...'}</span>
             ) : (
               <>
                 <CheckCircle2 className="w-4 h-4 text-zinc-950" />
-                <span>Save &amp; Publish by Link</span>
+                <span>{editingJournal ? 'Save Changes' : 'Save & Publish by Link'}</span>
               </>
             )}
           </button>

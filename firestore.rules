@@ -294,7 +294,8 @@ service cloud.firestore {
           'journalVolume', 'issnOrRefCode', 'publicationDate', 'abstract',
           'keywords', 'keyFindings', 'doiOrExternalLink', 'fileSourceType',
           'fileName', 'fileSizeBytes', 'fileDataUrl', 'driveUrl', 'driveEmbedUrl',
-          'citationApa', 'viewsCount', 'downloadsCount', 'uploaderUid', 'isBaseline', 'createdAt', 'updatedAt'
+          'publishedLinkUrl', 'publishedVenue', 'citationApa', 'viewsCount',
+          'downloadsCount', 'uploaderUid', 'isBaseline', 'isDeleted', 'createdAt', 'updatedAt'
         ]) &&
         data.portalId is string && data.portalId == 'bnhs' &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
@@ -304,21 +305,24 @@ service cloud.firestore {
         data.journalVolume is string && data.journalVolume.size() <= 100 &&
         data.issnOrRefCode is string && data.issnOrRefCode.size() <= 60 &&
         data.publicationDate is string && data.publicationDate.size() <= 30 &&
-        data.abstract is string && data.abstract.size() >= 10 && data.abstract.size() <= 4000 &&
+        data.abstract is string && data.abstract.size() >= 5 && data.abstract.size() <= 4000 &&
         data.keywords is string && data.keywords.size() <= 300 &&
         (!('keyFindings' in data) || (data.keyFindings is string && data.keyFindings.size() <= 2000)) &&
         (!('doiOrExternalLink' in data) || (data.doiOrExternalLink is string && data.doiOrExternalLink.size() <= 500)) &&
-        data.fileSourceType is string && (data.fileSourceType == 'local' || data.fileSourceType == 'drive') &&
+        data.fileSourceType is string && (data.fileSourceType == 'local' || data.fileSourceType == 'drive' || data.fileSourceType == 'link') &&
         data.fileName is string && data.fileName.size() <= 260 &&
         (!('fileSizeBytes' in data) || data.fileSizeBytes is number) &&
         (!('fileDataUrl' in data) || (data.fileDataUrl is string && data.fileDataUrl.size() <= 750000)) &&
         (!('driveUrl' in data) || (data.driveUrl is string && data.driveUrl.size() <= 500)) &&
         (!('driveEmbedUrl' in data) || (data.driveEmbedUrl is string && data.driveEmbedUrl.size() <= 500)) &&
+        (!('publishedLinkUrl' in data) || (data.publishedLinkUrl is string && data.publishedLinkUrl.size() <= 500)) &&
+        (!('publishedVenue' in data) || (data.publishedVenue is string && data.publishedVenue.size() <= 300)) &&
         data.citationApa is string && data.citationApa.size() <= 500 &&
         (!('viewsCount' in data) || data.viewsCount is number) &&
         (!('downloadsCount' in data) || data.downloadsCount is number) &&
         (!('uploaderUid' in data) || (data.uploaderUid is string && data.uploaderUid.size() <= 128)) &&
         (!('isBaseline' in data) || data.isBaseline is bool) &&
+        (!('isDeleted' in data) || data.isDeleted is bool) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -516,7 +520,7 @@ service cloud.firestore {
         incoming().portalId == existing().portalId &&
         incoming().updatedAt == request.time;
 
-      allow delete: if isAdmin() && isValidId(journalId);
+      allow delete: if isValidId(journalId) && existing().portalId == 'bnhs';
     }
   }
 }

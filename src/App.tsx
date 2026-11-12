@@ -822,12 +822,15 @@ export default function App() {
             keywords: String(d.keywords || ''),
             keyFindings: String(d.keyFindings || ''),
             doiOrExternalLink: String(d.doiOrExternalLink || ''),
-            fileSourceType: (d.fileSourceType as 'local' | 'drive') || 'drive',
+            fileSourceType:
+              (d.fileSourceType as 'local' | 'drive' | 'link') || 'drive',
             fileName: String(d.fileName || ''),
             fileSizeBytes: Number(d.fileSizeBytes || 0),
             fileDataUrl: String(d.fileDataUrl || ''),
             driveUrl: String(d.driveUrl || ''),
             driveEmbedUrl: String(d.driveEmbedUrl || ''),
+            publishedLinkUrl: String(d.publishedLinkUrl || ''),
+            publishedVenue: String(d.publishedVenue || ''),
             citationApa: String(d.citationApa || ''),
             viewsCount: Number(d.viewsCount || 0),
             downloadsCount: Number(d.downloadsCount || 0),
@@ -839,6 +842,7 @@ export default function App() {
               ? d.updatedAt.toDate().toISOString()
               : new Date().toISOString(),
             isBaseline: Boolean(d.isBaseline),
+            isDeleted: Boolean(d.isDeleted),
           };
         });
         setCloudJournals(list);
@@ -1184,14 +1188,14 @@ export default function App() {
       }
     });
     cloudJournals.forEach((j) => {
-      if (deletedSet.has(j.id)) {
+      if (deletedSet.has(j.id) || j.isDeleted) {
         map.delete(j.id);
       } else {
         map.set(j.id, j);
       }
     });
     localJournals.forEach((j) => {
-      if (deletedSet.has(j.id)) {
+      if (deletedSet.has(j.id) || j.isDeleted) {
         map.delete(j.id);
       } else {
         const existing = map.get(j.id);
@@ -1201,7 +1205,7 @@ export default function App() {
       }
     });
     return Array.from(map.values())
-      .filter((j) => !deletedSet.has(j.id))
+      .filter((j) => !deletedSet.has(j.id) && !j.isDeleted)
       .sort((a, b) => new Date(b.publicationDate).getTime() - new Date(a.publicationDate).getTime());
   }, [cloudJournals, localJournals, deletedJournalIds]);
 
@@ -1933,17 +1937,21 @@ export default function App() {
         abstract: newRecord.abstract.slice(0, 4000),
         keywords: (newRecord.keywords || '').slice(0, 300),
         keyFindings: (newRecord.keyFindings || '').slice(0, 2000),
+        doiOrExternalLink: (newRecord.doiOrExternalLink || '').slice(0, 500),
         fileSourceType: newRecord.fileSourceType,
         fileName: (newRecord.fileName || '').slice(0, 260),
         fileSizeBytes: Number(newRecord.fileSizeBytes || 0),
         fileDataUrl: (newRecord.fileDataUrl || '').slice(0, 750000),
         driveUrl: (newRecord.driveUrl || '').slice(0, 500),
         driveEmbedUrl: (newRecord.driveEmbedUrl || '').slice(0, 500),
+        publishedLinkUrl: (newRecord.publishedLinkUrl || '').slice(0, 500),
+        publishedVenue: (newRecord.publishedVenue || '').slice(0, 300),
         citationApa: (newRecord.citationApa || '').slice(0, 500),
         viewsCount: Number(newRecord.viewsCount || 1),
         downloadsCount: Number(newRecord.downloadsCount || 0),
         uploaderUid: writerUid.slice(0, 128),
         isBaseline: false,
+        isDeleted: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -1957,12 +1965,21 @@ export default function App() {
   const handleEditPublishedJournal = async (journal: PublishedJournalRecord) => {
     const cleanId = sanitizeId(journal.id);
     const nowIso = new Date().toISOString();
+    const writerUid =
+      journal.uploaderUid ||
+      portalSession?.uid ||
+      firebaseUser?.uid ||
+      'bnhs_researcher';
     const updatedRecord: PublishedJournalRecord = {
       ...journal,
       id: cleanId,
+      isDeleted: false,
       updatedAtIso: nowIso,
     };
 
+    setDeletedJournalIds((prev) =>
+      prev.filter((id) => id !== cleanId && id !== journal.id)
+    );
     setLocalJournals((prev) => [
       ...prev.filter((j) => j.id !== cleanId),
       updatedRecord,
@@ -1981,37 +1998,81 @@ export default function App() {
     }
 
     const docPath = `published_journals/${cleanId}`;
+    const existsInCloud = cloudJournals.some((j) => j.id === cleanId);
     try {
-      await updateDoc(doc(db, 'published_journals', cleanId), {
-        title: updatedRecord.title.slice(0, 300),
-        authors: updatedRecord.authors.slice(0, 300),
-        authorAffiliation: (updatedRecord.authorAffiliation || '').slice(0, 200),
-        division: updatedRecord.division,
-        journalVolume: (updatedRecord.journalVolume || '').slice(0, 100),
-        issnOrRefCode: (updatedRecord.issnOrRefCode || '').slice(0, 60),
-        publicationDate: (updatedRecord.publicationDate || '').slice(0, 30),
-        abstract: updatedRecord.abstract.slice(0, 4000),
-        keywords: (updatedRecord.keywords || '').slice(0, 300),
-        keyFindings: (updatedRecord.keyFindings || '').slice(0, 2000),
-        fileSourceType: updatedRecord.fileSourceType,
-        fileName: (updatedRecord.fileName || '').slice(0, 260),
-        fileSizeBytes: Number(updatedRecord.fileSizeBytes || 0),
-        fileDataUrl: (updatedRecord.fileDataUrl || '').slice(0, 750000),
-        driveUrl: (updatedRecord.driveUrl || '').slice(0, 500),
-        driveEmbedUrl: (updatedRecord.driveEmbedUrl || '').slice(0, 500),
-        citationApa: (updatedRecord.citationApa || '').slice(0, 500),
-        updatedAt: serverTimestamp(),
-      });
+      if (existsInCloud) {
+        await updateDoc(doc(db, 'published_journals', cleanId), {
+          title: updatedRecord.title.slice(0, 300),
+          authors: updatedRecord.authors.slice(0, 300),
+          authorAffiliation: (updatedRecord.authorAffiliation || '').slice(0, 200),
+          division: updatedRecord.division,
+          journalVolume: (updatedRecord.journalVolume || '').slice(0, 100),
+          issnOrRefCode: (updatedRecord.issnOrRefCode || '').slice(0, 60),
+          publicationDate: (updatedRecord.publicationDate || '').slice(0, 30),
+          abstract: updatedRecord.abstract.slice(0, 4000),
+          keywords: (updatedRecord.keywords || '').slice(0, 300),
+          keyFindings: (updatedRecord.keyFindings || '').slice(0, 2000),
+          doiOrExternalLink: (updatedRecord.doiOrExternalLink || '').slice(0, 500),
+          fileSourceType: updatedRecord.fileSourceType,
+          fileName: (updatedRecord.fileName || '').slice(0, 260),
+          fileSizeBytes: Number(updatedRecord.fileSizeBytes || 0),
+          fileDataUrl: (updatedRecord.fileDataUrl || '').slice(0, 750000),
+          driveUrl: (updatedRecord.driveUrl || '').slice(0, 500),
+          driveEmbedUrl: (updatedRecord.driveEmbedUrl || '').slice(0, 500),
+          publishedLinkUrl: (updatedRecord.publishedLinkUrl || '').slice(0, 500),
+          publishedVenue: (updatedRecord.publishedVenue || '').slice(0, 300),
+          citationApa: (updatedRecord.citationApa || '').slice(0, 500),
+          isDeleted: false,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(doc(db, 'published_journals', cleanId), {
+          portalId: 'bnhs',
+          title: updatedRecord.title.slice(0, 300),
+          authors: updatedRecord.authors.slice(0, 300),
+          authorAffiliation: (updatedRecord.authorAffiliation || '').slice(0, 200),
+          division: updatedRecord.division,
+          journalVolume: (updatedRecord.journalVolume || '').slice(0, 100),
+          issnOrRefCode: (updatedRecord.issnOrRefCode || '').slice(0, 60),
+          publicationDate: (updatedRecord.publicationDate || '').slice(0, 30),
+          abstract: updatedRecord.abstract.slice(0, 4000),
+          keywords: (updatedRecord.keywords || '').slice(0, 300),
+          keyFindings: (updatedRecord.keyFindings || '').slice(0, 2000),
+          doiOrExternalLink: (updatedRecord.doiOrExternalLink || '').slice(0, 500),
+          fileSourceType: updatedRecord.fileSourceType,
+          fileName: (updatedRecord.fileName || '').slice(0, 260),
+          fileSizeBytes: Number(updatedRecord.fileSizeBytes || 0),
+          fileDataUrl: (updatedRecord.fileDataUrl || '').slice(0, 750000),
+          driveUrl: (updatedRecord.driveUrl || '').slice(0, 500),
+          driveEmbedUrl: (updatedRecord.driveEmbedUrl || '').slice(0, 500),
+          publishedLinkUrl: (updatedRecord.publishedLinkUrl || '').slice(0, 500),
+          publishedVenue: (updatedRecord.publishedVenue || '').slice(0, 300),
+          citationApa: (updatedRecord.citationApa || '').slice(0, 500),
+          viewsCount: Number(updatedRecord.viewsCount || 1),
+          downloadsCount: Number(updatedRecord.downloadsCount || 0),
+          uploaderUid: writerUid.slice(0, 128),
+          isBaseline: Boolean(updatedRecord.isBaseline),
+          isDeleted: false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
       showToast('Research Journal manuscript details updated.');
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, docPath);
+      handleFirestoreError(error, OperationType.WRITE, docPath);
       showToast('Changes saved locally.');
     }
   };
 
   const handleDeletePublishedJournal = async (id: string) => {
     const cleanId = sanitizeId(id);
-    setDeletedJournalIds((prev) => [...prev, cleanId, id]);
+    const target =
+      activePublishedJournals.find((j) => j.id === id || j.id === cleanId) ||
+      INITIAL_PUBLISHED_JOURNALS.find((j) => j.id === id || j.id === cleanId);
+
+    setDeletedJournalIds((prev) =>
+      prev.includes(cleanId) ? prev : [...prev, cleanId, id]
+    );
     setLocalJournals((prev) => prev.filter((j) => j.id !== cleanId && j.id !== id));
 
     try {
@@ -2028,9 +2089,47 @@ export default function App() {
       // ignore
     }
 
+    const isBaselineItem = INITIAL_PUBLISHED_JOURNALS.some(
+      (j) => j.id === cleanId || j.id === id
+    );
+    const existsInCloud = cloudJournals.some((j) => j.id === cleanId);
     const docPath = `published_journals/${cleanId}`;
+
     try {
-      await deleteDoc(doc(db, 'published_journals', cleanId));
+      if (isBaselineItem) {
+        await setDoc(doc(db, 'published_journals', cleanId), {
+          portalId: 'bnhs',
+          title: (target?.title || 'Deleted Manuscript').slice(0, 300),
+          authors: (target?.authors || 'BNHS').slice(0, 300),
+          authorAffiliation: (target?.authorAffiliation || '').slice(0, 200),
+          division: target?.division || 'basic',
+          journalVolume: (target?.journalVolume || '').slice(0, 100),
+          issnOrRefCode: (target?.issnOrRefCode || '').slice(0, 60),
+          publicationDate: (target?.publicationDate || '2026-01-01').slice(0, 30),
+          abstract: (target?.abstract || 'Deleted record.').slice(0, 4000),
+          keywords: (target?.keywords || '').slice(0, 300),
+          keyFindings: (target?.keyFindings || '').slice(0, 2000),
+          doiOrExternalLink: (target?.doiOrExternalLink || '').slice(0, 500),
+          fileSourceType: target?.fileSourceType || 'drive',
+          fileName: (target?.fileName || 'deleted.pdf').slice(0, 260),
+          fileSizeBytes: Number(target?.fileSizeBytes || 0),
+          fileDataUrl: '',
+          driveUrl: (target?.driveUrl || '').slice(0, 500),
+          driveEmbedUrl: (target?.driveEmbedUrl || '').slice(0, 500),
+          publishedLinkUrl: (target?.publishedLinkUrl || '').slice(0, 500),
+          publishedVenue: (target?.publishedVenue || '').slice(0, 300),
+          citationApa: (target?.citationApa || 'Deleted').slice(0, 500),
+          viewsCount: Number(target?.viewsCount || 0),
+          downloadsCount: Number(target?.downloadsCount || 0),
+          uploaderUid: 'bnhs_admin',
+          isBaseline: true,
+          isDeleted: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else if (existsInCloud) {
+        await deleteDoc(doc(db, 'published_journals', cleanId));
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, docPath);
     }

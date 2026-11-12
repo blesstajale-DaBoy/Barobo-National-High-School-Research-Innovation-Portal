@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   Maximize2,
   Link2,
+  Edit3,
+  Trash2,
 } from 'lucide-react';
 import { PublishedJournalRecord } from '../data/bnhsTaxonomy';
 import { extractGoogleDriveFileId } from '../utils/videoUtils';
@@ -21,15 +23,20 @@ interface JournalReaderModalProps {
   journal: PublishedJournalRecord | null;
   onClose: () => void;
   onDownload?: (journal: PublishedJournalRecord) => void;
+  onEdit?: (journal: PublishedJournalRecord) => void;
+  onDelete?: (journal: PublishedJournalRecord) => void;
 }
 
 export function JournalReaderModal({
   journal,
   onClose,
   onDownload,
+  onEdit,
+  onDelete,
 }: JournalReaderModalProps) {
   const [copiedCitation, setCopiedCitation] = useState(false);
   const [activeTab, setActiveTab] = useState<'reader' | 'metadata'>('reader');
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!journal) return null;
 
@@ -56,8 +63,8 @@ export function JournalReaderModal({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-    } else if (journal.driveUrl) {
-      window.open(journal.driveUrl, '_blank', 'noopener,noreferrer');
+    } else if (journal.publishedLinkUrl || journal.driveUrl) {
+      window.open(journal.publishedLinkUrl || journal.driveUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -65,7 +72,7 @@ export function JournalReaderModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 p-2 sm:p-4 overflow-y-auto">
       <div className="bg-white border border-zinc-200 shadow-2xl max-w-5xl w-full my-auto h-[94vh] flex flex-col overflow-hidden">
         {/* Top Header */}
-        <div className="bg-[#6B1420] text-white px-4 sm:px-6 py-3.5 flex items-center justify-between shrink-0">
+        <div className="bg-[#6B1420] text-white px-4 sm:px-6 py-3.5 flex items-center justify-between gap-2 shrink-0 flex-wrap">
           <div className="flex items-center gap-3 min-w-0 pr-2">
             <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0 border border-amber-300/40 text-amber-300">
               <BookOpen className="w-4 h-4" />
@@ -86,7 +93,59 @@ export function JournalReaderModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  const target = journal;
+                  onClose();
+                  onEdit(target);
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 border border-white/20 transition-colors whitespace-nowrap"
+                title="Edit this published research entry"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-amber-300" />
+                <span>Edit</span>
+              </button>
+            )}
+
+            {onDelete && (
+              confirmDelete ? (
+                <div className="inline-flex items-center gap-1 bg-red-900/90 border border-red-400 px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = journal;
+                      setConfirmDelete(false);
+                      onClose();
+                      onDelete(target);
+                    }}
+                    className="px-2 py-0.5 text-[11px] font-bold text-white bg-red-600 hover:bg-red-500"
+                  >
+                    Confirm Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="px-1.5 py-0.5 text-[11px] text-rose-200 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-rose-100 bg-red-950/60 hover:bg-red-800 border border-red-400/30 transition-colors whitespace-nowrap"
+                  title="Delete this published research entry"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-300" />
+                  <span>Delete</span>
+                </button>
+              )
+            )}
+
             <button
               type="button"
               onClick={handleCopyCitation}

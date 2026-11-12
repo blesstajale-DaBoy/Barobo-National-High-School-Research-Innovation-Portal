@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   BookOpen,
@@ -70,6 +70,59 @@ export function PublishJournalModal({
   const [isDragOver, setIsDragOver] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setErrorMsg('');
+    if (editingJournal) {
+      setSourceType(editingJournal.fileSourceType === 'local' ? 'local' : 'drive');
+      setTitle(editingJournal.title || '');
+      setAuthors(editingJournal.authors || '');
+      setAffiliation(
+        editingJournal.authorAffiliation ||
+          'Barobo National High School — Science & Research Faculty'
+      );
+      setDivision(editingJournal.division || 'basic');
+      setJournalVolume(
+        editingJournal.journalVolume || 'Volume 4, Issue 1 (SY 2025–2026)'
+      );
+      setIssnOrRefCode(
+        editingJournal.issnOrRefCode ||
+          `BNHS-JRNL-2026-00${Math.floor(Math.random() * 90) + 10}`
+      );
+      setPublicationDate(
+        editingJournal.publicationDate || new Date().toISOString().split('T')[0]
+      );
+      setAbstract(editingJournal.abstract || '');
+      setKeywords(editingJournal.keywords || '');
+      setKeyFindings(editingJournal.keyFindings || '');
+      setFileName(editingJournal.fileName || '');
+      setFileSizeBytes(editingJournal.fileSizeBytes || 0);
+      setFileDataUrl(editingJournal.fileDataUrl || '');
+      setDriveUrl(
+        editingJournal.driveUrl ||
+          editingJournal.publishedLinkUrl ||
+          editingJournal.doiOrExternalLink ||
+          ''
+      );
+    } else {
+      setSourceType('local');
+      setTitle('');
+      setAuthors('');
+      setAffiliation('Barobo National High School — Science & Research Faculty');
+      setDivision('basic');
+      setJournalVolume('Volume 4, Issue 1 (SY 2025–2026)');
+      setIssnOrRefCode(`BNHS-JRNL-2026-00${Math.floor(Math.random() * 90) + 10}`);
+      setPublicationDate(new Date().toISOString().split('T')[0]);
+      setAbstract('');
+      setKeywords('');
+      setKeyFindings('');
+      setFileName('');
+      setFileSizeBytes(0);
+      setFileDataUrl('');
+      setDriveUrl('');
+    }
+  }, [editingJournal, isOpen]);
 
   if (!isOpen) return null;
 
