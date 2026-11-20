@@ -39,10 +39,10 @@ import {
 } from '../data/bnhsTaxonomy';
 import {
   downloadResearchInventoryCsv,
-  downloadStandalonePortalHtml,
   getDivisionLabel,
 } from '../utils/reportExporter';
 import { parseVideoSource, extractGoogleDriveFileId } from '../utils/videoUtils';
+import { DEFAULT_PORTAL_LOGO_URL } from '../utils/portalAuth';
 
 /**
  * Converts a Google Drive sharing link (e.g. https://drive.google.com/file/d/FILE_ID/view)
@@ -240,6 +240,7 @@ export function formatTitleFromFileName(filename: string): string {
 }
 
 interface AdminEvaluationViewProps {
+  portalLogoUrl?: string;
   researches: ResearchRecord[];
   isAdmin: boolean;
   currentUserUid?: string | null;
@@ -291,6 +292,7 @@ export interface BulkUploadSummary {
 }
 
 export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
+  portalLogoUrl = DEFAULT_PORTAL_LOGO_URL,
   researches,
   isAdmin,
   currentUserUid,
@@ -494,7 +496,7 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
       const id =
         editingOverviewId || `overview_card_${Date.now()}`;
       const finalImageUrl = resolveOverviewImageLink(
-        ovImageUrl || ovWebLinkInput || '/assets/aistudio/BNHS_LOGO_animated.gif'
+        ovImageUrl || ovWebLinkInput || portalLogoUrl
       );
       await onSaveOverviewItem({
         id,
@@ -984,29 +986,11 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           <button
             type="button"
-            onClick={onAddNewResearch}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add / Submit Research</span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => downloadResearchInventoryCsv(researches)}
             className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-zinc-800 bg-zinc-100 hover:bg-zinc-200 transition-colors whitespace-nowrap shrink-0"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-[#6B1420]" />
             <span>Export Inventory (.CSV)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => downloadStandalonePortalHtml(researches)}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-zinc-800 bg-zinc-100 hover:bg-zinc-200 transition-colors whitespace-nowrap shrink-0"
-          >
-            <FileCode className="w-3.5 h-3.5 text-amber-700" />
-            <span>Download BNHS Portal (.HTML)</span>
           </button>
 
           {isAdmin && (
@@ -1032,7 +1016,28 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
         </div>
       )}
 
-      {/* ==================== ADMIN OVERVIEW, GALLERY & INFORMATION MANAGER (ADD, EDIT, DELETE & UPLOAD PHOTO) ==================== */}
+      {/* ==================== ACTIVE PORTAL BRANDING LOGO (GIF FORMAT SUPPORTED) ==================== */}
+      <div className="bg-white border border-zinc-200 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <img
+            src={portalLogoUrl || DEFAULT_PORTAL_LOGO_URL}
+            alt="Active BNHS Research Portal Logo (GIF Supported)"
+            referrerPolicy="no-referrer"
+            className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-contain bg-white border-2 border-[#6B1420]/25 p-1 shadow-sm shrink-0"
+          />
+          <div className="space-y-1">
+            <div className="text-xs font-semibold text-[#6B1420] flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+              <span>BNHS Research Portal Official Logo (Animated GIF Supported)</span>
+            </div>
+            <p className="text-xs text-zinc-600 max-w-2xl">
+              Active across the Portal Header, Overview Hero, Research Journal, Login Modal, and Footer. Use the unified <strong>Edit</strong> menu in the top portal bar to upload a new animated <strong>.GIF</strong> logo or customize Overview, Gallery, and Research records.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ==================== ADMIN OVERVIEW, GALLERY & INFORMATION PREVIEW ==================== */}
       <div className="bg-white border border-zinc-200 p-6 md:p-8 space-y-6">
         {/* Visual Content Section Selector Tabs */}
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 pb-3">
@@ -1355,49 +1360,6 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                       </p>
                     </div>
                   </div>
-
-                  <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => openEditOverviewItem(item)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>Edit / Photo</span>
-                    </button>
-
-                    {confirmDeleteOvId === item.id ? (
-                      <div className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await onDeleteOverviewItem(item.id);
-                            setConfirmDeleteOvId(null);
-                            setOvFeedback(`Deleted "${item.title}" from the Overview section.`);
-                          }}
-                          className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
-                        >
-                          Confirm Delete
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteOvId(null)}
-                          className="px-1.5 py-1 text-[11px] text-zinc-600"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteOvId(item.id)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete</span>
-                      </button>
-                    )}
-                  </div>
                 </div>
               ))}
             </div>
@@ -1426,132 +1388,6 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                   <span>·</span>
                   <span>1000 × 500 Canvas Enforced</span>
                 </div>
-              </div>
-
-              {/* Button Menu Arranged in a Clean Column */}
-              <div className="flex flex-col gap-2 shrink-0 w-full sm:w-72 lg:w-80 bg-[#FAF9F5] border border-zinc-200 p-3 shadow-2xs">
-                <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-zinc-500 pb-1 border-b border-zinc-200">
-                  <span>Gallery Menu Actions</span>
-                  <span className="font-mono text-[10px] text-zinc-400">1000 × 500</span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={openAddGalleryItem}
-                  className="inline-flex items-center justify-between gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors shadow-xs w-full text-left"
-                >
-                  <span className="flex items-center gap-2">
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Single Picture (1000 × 500)</span>
-                  </span>
-                </button>
-
-                <label className="inline-flex items-center justify-between gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-amber-700 hover:bg-amber-800 cursor-pointer transition-colors shadow-xs w-full text-left">
-                  <span className="flex items-center gap-2">
-                    <Images className="w-3.5 h-3.5" />
-                    <span>Bulk Upload Pictures (Device)</span>
-                  </span>
-                  <span className="text-[10px] bg-amber-900/40 px-1.5 py-0.5 rounded-xs font-mono">1000×500</span>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={handleBulkGalleryUpload}
-                    className="hidden"
-                  />
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGalleryUploadMode('gdrive');
-                    setIsGalleryFormOpen(false);
-                  }}
-                  className={`inline-flex items-center justify-between gap-2 px-3.5 py-2 text-xs font-semibold border transition-colors shadow-xs w-full text-left ${
-                    galleryUploadMode === 'gdrive'
-                      ? 'bg-emerald-800 text-white border-emerald-900 ring-1 ring-emerald-500'
-                      : 'bg-white text-emerald-900 border-emerald-300 hover:bg-emerald-50'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    <FolderUp className="w-3.5 h-3.5 text-emerald-700" />
-                    <span>Upload in Google Drive (Bulk / Link)</span>
-                  </span>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-xs font-mono">Drive</span>
-                </button>
-
-                {onResetGalleryDefaults && (
-                  <button
-                    type="button"
-                    disabled={deletingGalleryBusy}
-                    onClick={async () => {
-                      setDeletingGalleryBusy(true);
-                      setConfirmDeleteAllGal(false);
-                      setConfirmDeleteGalId(null);
-                      try {
-                        await onResetGalleryDefaults();
-                        setGalFeedback('Default Research Gallery pictures (1000 × 500) have been restored.');
-                      } finally {
-                        setDeletingGalleryBusy(false);
-                      }
-                    }}
-                    className="inline-flex items-center justify-between gap-2 px-3.5 py-2 text-xs font-semibold text-zinc-700 bg-white border border-zinc-300 hover:bg-zinc-100 disabled:opacity-50 transition-colors w-full text-left"
-                  >
-                    <span className="flex items-center gap-2">
-                      <RotateCcw className="w-3.5 h-3.5 text-zinc-500" />
-                      <span>Restore Default Pictures</span>
-                    </span>
-                  </button>
-                )}
-
-                {onDeleteAllGalleryItems && galleryItems.length > 0 && (
-                  confirmDeleteAllGal ? (
-                    <div className="flex flex-col gap-1.5 bg-red-50 border border-red-200 p-2.5 w-full">
-                      <span className="text-[11px] font-semibold text-red-800 text-center">
-                        Delete all {galleryItems.length} pictures?
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={deletingGalleryBusy}
-                          onClick={async () => {
-                            setDeletingGalleryBusy(true);
-                            try {
-                              await onDeleteAllGalleryItems();
-                              setConfirmDeleteAllGal(false);
-                              setConfirmDeleteGalId(null);
-                              setGalFeedback('All Research Gallery pictures have been deleted.');
-                            } finally {
-                              setDeletingGalleryBusy(false);
-                            }
-                          }}
-                          className="flex-1 px-2.5 py-1 text-xs font-semibold text-white bg-red-700 hover:bg-red-800 disabled:opacity-50 text-center"
-                        >
-                          {deletingGalleryBusy ? 'Deleting...' : 'Yes, Delete All'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteAllGal(false)}
-                          className="px-2.5 py-1 text-xs text-zinc-600 hover:text-zinc-900 border border-zinc-300 bg-white"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={deletingGalleryBusy}
-                      onClick={() => setConfirmDeleteAllGal(true)}
-                      className="inline-flex items-center justify-between gap-2 px-3.5 py-2 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 disabled:opacity-50 transition-colors w-full text-left"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete All Pictures ({galleryItems.length})</span>
-                      </span>
-                    </button>
-                  )
-                )}
               </div>
             </div>
 
@@ -2145,58 +1981,6 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                         </p>
                       </div>
                     </div>
-
-                    <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => openEditGalleryItem(item)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>Edit (1000 × 500)</span>
-                      </button>
-
-                      {confirmDeleteGalId === item.id ? (
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            disabled={deletingGalleryBusy}
-                            onClick={async () => {
-                              if (onDeleteGalleryItem) {
-                                setDeletingGalleryBusy(true);
-                                try {
-                                  await onDeleteGalleryItem(item.id);
-                                  setConfirmDeleteGalId(null);
-                                  setGalFeedback(`Deleted picture "${item.title}" from Gallery.`);
-                                } finally {
-                                  setDeletingGalleryBusy(false);
-                                }
-                              }
-                            }}
-                            className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800 disabled:opacity-50"
-                          >
-                            {deletingGalleryBusy ? 'Deleting...' : 'Confirm'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteGalId(null)}
-                            className="px-1.5 py-1 text-[11px] text-zinc-600"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={deletingGalleryBusy}
-                          onClick={() => setConfirmDeleteGalId(item.id)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 disabled:opacity-50 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Delete</span>
-                        </button>
-                      )}
-                    </div>
                   </div>
                 ))}
               </div>
@@ -2211,25 +1995,14 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
               <div>
                 <div className="text-xs text-[#6B1420] font-semibold flex items-center gap-1.5">
                   <Film className="w-4 h-4 text-[#6B1420]" />
-                  <span>Research Information Video Manager · 1000 × 500 Dimensions · Video Only</span>
+                  <span>Research Information Video Showcase · 1000 × 500 Dimensions · Video Only</span>
                 </div>
                 <h3 className="text-xl font-display font-semibold text-zinc-900 mt-0.5">
-                  Research Information Videos (YouTube, Google Drive &amp; Video Upload)
+                  Research Information Videos (YouTube &amp; Google Drive)
                 </h3>
                 <p className="text-xs text-zinc-600 mt-1">
-                  Upload video files or link videos from YouTube and Google Drive. These stream in the dedicated 1000 by 500 Research Information player on the Overview page.
+                  Active videos streaming in the dedicated 1000 by 500 Research Information player on the Overview page. Add, edit, or delete videos via the unified portal menus.
                 </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={openAddInfoItem}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Video to Research Information (1000 × 500)</span>
-                </button>
               </div>
             </div>
 
@@ -2541,64 +2314,6 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                         </p>
                       </div>
                     </div>
-
-                    <div className="p-3 bg-white border-t border-zinc-200 flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openEditInfoItem(item)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#6B1420] bg-rose-50 hover:bg-rose-100 transition-colors"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Edit Video</span>
-                        </button>
-                        {itemVideo.originalUrl && (
-                          <a
-                            href={itemVideo.originalUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 transition-colors"
-                            title="Open video URL in new tab"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        )}
-                      </div>
-
-                      {confirmDeleteInfoId === item.id ? (
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (onDeleteInformationItem) {
-                                await onDeleteInformationItem(item.id);
-                                setConfirmDeleteInfoId(null);
-                                setInfoFeedback(`Deleted video topic "${item.title}".`);
-                              }
-                            }}
-                            className="px-2 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
-                          >
-                            Confirm
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteInfoId(null)}
-                            className="px-1.5 py-1 text-[11px] text-zinc-600"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteInfoId(item.id)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Delete</span>
-                        </button>
-                      )}
-                    </div>
                   </div>
                 );
               })}
@@ -2759,58 +2474,6 @@ export const AdminEvaluationView: React.FC<AdminEvaluationViewProps> = ({
                       >
                         {isAdmin ? 'Evaluate' : 'Details'}
                       </button>
-
-                      {canModify && (
-                        <button
-                          type="button"
-                          onClick={() => onEditResearch(item)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-zinc-800 bg-zinc-100 hover:bg-zinc-200 transition-colors"
-                        >
-                          <Edit3 className="w-3 h-3 text-[#6B1420]" />
-                          <span>Edit</span>
-                        </button>
-                      )}
-
-                      {canModify && (
-                        <>
-                          {confirmDeleteResearchId === item.id ? (
-                            <div className="inline-flex items-center gap-1 bg-red-50 border border-red-200 px-2 py-0.5">
-                              <button
-                                type="button"
-                                disabled={busyId === item.id}
-                                onClick={async () => {
-                                  setBusyId(item.id);
-                                  try {
-                                    await onDeleteResearch(item);
-                                    setConfirmDeleteResearchId(null);
-                                  } finally {
-                                    setBusyId(null);
-                                  }
-                                }}
-                                className="px-2 py-0.5 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
-                              >
-                                Confirm Delete
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteResearchId(null)}
-                                className="px-1.5 py-0.5 text-[11px] text-zinc-600 hover:text-zinc-900"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteResearchId(item.id)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>Delete</span>
-                            </button>
-                          )}
-                        </>
-                      )}
 
                       {isAdmin && item.status !== 'Approved' && (
                         <button

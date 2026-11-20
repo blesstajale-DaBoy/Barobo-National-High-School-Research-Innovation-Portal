@@ -505,6 +505,46 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(infoId);
     }
 
+    function isValidPortalSetting(data) {
+      return data.keys().hasAll([
+          'portalId', 'logoUrl', 'logoFileName', 'logoMimeType', 'updatedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'logoUrl', 'logoFileName', 'logoMimeType', 'updatedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.portalId is string && data.portalId == 'bnhs' &&
+        data.logoUrl is string && data.logoUrl.size() <= 750000 &&
+        data.logoFileName is string && data.logoFileName.size() <= 260 &&
+        data.logoMimeType is string && data.logoMimeType.size() <= 80 &&
+        data.updatedBy is string && data.updatedBy.size() <= 160 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPortalAccount(data) {
+      return data.keys().hasAll([
+          'portalId', 'role', 'emailHash', 'passwordHash', 'mustChangePassword', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'portalId', 'role', 'emailHash', 'passwordHash', 'mustChangePassword', 'createdAt', 'updatedAt'
+        ]) &&
+        data.portalId is string && data.portalId == 'bnhs' &&
+        data.role is string && (
+          data.role == 'Administrator' ||
+          data.role == 'Researcher Coordinator/Adviser' ||
+          data.role == 'Teacher Researcher' ||
+          data.role == 'Master Teacher Researcher' ||
+          data.role == 'School Research Grammarian' ||
+          data.role == 'School Research Statistician' ||
+          data.role == 'Student Researcher'
+        ) &&
+        data.emailHash is string && data.emailHash.size() >= 1 && data.emailHash.size() <= 128 &&
+        data.passwordHash is string && data.passwordHash.size() >= 4 && data.passwordHash.size() <= 200 &&
+        data.mustChangePassword is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // 14. Collection Rules: /published_journals/{journalId}
     match /published_journals/{journalId} {
       allow get: if isValidId(journalId) && existing().portalId == 'bnhs';
@@ -521,6 +561,44 @@ service cloud.firestore {
         incoming().updatedAt == request.time;
 
       allow delete: if isValidId(journalId) && existing().portalId == 'bnhs';
+    }
+
+    // 15. Collection Rules: /portal_settings/{settingId}
+    match /portal_settings/{settingId} {
+      allow get: if isValidId(settingId) && existing().portalId == 'bnhs';
+      allow list: if existing().portalId == 'bnhs';
+
+      allow create: if isAdmin() &&
+        isValidId(settingId) &&
+        isValidPortalSetting(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(settingId) &&
+        isValidPortalSetting(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isAdmin() && isValidId(settingId);
+    }
+
+    // 16. Collection Rules: /portal_accounts/{accountId} (Hashed credentials, non-listable)
+    match /portal_accounts/{accountId} {
+      allow get: if isValidId(accountId);
+      allow list: if false;
+
+      allow create: if isValidId(accountId) &&
+        isValidPortalAccount(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isValidId(accountId) &&
+        isValidPortalAccount(incoming()) &&
+        incoming().portalId == existing().portalId &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if false;
     }
   }
 }

@@ -273,65 +273,6 @@ export const ResearchDetailModal: React.FC<ResearchDetailModalProps> = ({
                 </>
               )}
             </div>
-
-            {/* Quick Edit & Delete Strip at Top of Record */}
-            {(canEdit || canDelete) && (
-              <div className="flex items-center gap-2">
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onEdit(record);
-                    }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-zinc-800 bg-zinc-100 hover:bg-zinc-200 transition-colors"
-                  >
-                    <Edit3 className="w-3.5 h-3.5 text-[#6B1420]" />
-                    <span>Edit Research</span>
-                  </button>
-                )}
-                {canDelete && !confirmingDelete && (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmingDelete(true)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete Research</span>
-                  </button>
-                )}
-                {canDelete && confirmingDelete && (
-                  <div className="inline-flex items-center gap-1.5 bg-red-50 border border-red-200 px-2.5 py-1">
-                    <span className="text-[11px] font-semibold text-red-800">
-                      Confirm delete?
-                    </span>
-                    <button
-                      type="button"
-                      disabled={deletingRecord}
-                      onClick={async () => {
-                        setDeletingRecord(true);
-                        try {
-                          await onDelete(record);
-                          onClose();
-                        } finally {
-                          setDeletingRecord(false);
-                        }
-                      }}
-                      className="px-2 py-0.5 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
-                    >
-                      {deletingRecord ? 'Deleting...' : 'Yes, Delete'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmingDelete(false)}
-                      className="px-2 py-0.5 text-[11px] text-zinc-700 hover:text-zinc-900"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Study Title */}
@@ -594,15 +535,6 @@ export const ResearchDetailModal: React.FC<ResearchDetailModalProps> = ({
                             {cmt.createdAtIso.slice(0, 10)}
                           </span>
                         </div>
-                        {canDeleteComment && !cmt.isBaseline && (
-                          <button
-                            type="button"
-                            onClick={() => onDeleteComment(cmt.id)}
-                            className="text-[11px] text-red-600 hover:underline"
-                          >
-                            Remove
-                          </button>
-                        )}
                       </div>
                       <p className="text-zinc-700 leading-relaxed whitespace-pre-line">
                         {cmt.content}
@@ -804,32 +736,7 @@ export const ResearchDetailModal: React.FC<ResearchDetailModalProps> = ({
           )}
 
           {/* Footer Actions */}
-          <div className="flex items-center justify-between pt-3 border-t border-zinc-200">
-            <div className="flex items-center gap-2">
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onEdit(record);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-800 bg-zinc-100 hover:bg-zinc-200 transition-colors"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Edit Record</span>
-                </button>
-              )}
-              {canDelete && !confirmingDelete && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmingDelete(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete</span>
-                </button>
-              )}
-            </div>
+          <div className="flex items-center justify-end pt-3 border-t border-zinc-200">
             <button
               type="button"
               onClick={onClose}

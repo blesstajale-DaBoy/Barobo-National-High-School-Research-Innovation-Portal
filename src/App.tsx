@@ -43,6 +43,7 @@ import {
   CloudCheck,
   RefreshCw,
   Upload,
+  KeyRound,
 } from 'lucide-react';
 import {
   db,
@@ -85,10 +86,13 @@ import {
   downloadResearchDossierHtml,
   downloadManuscriptWordDoc,
   downloadResearchInventoryCsv,
-  downloadStandalonePortalHtml,
   downloadDataUrlFile,
   getDivisionLabel,
 } from './utils/reportExporter';
+import {
+  DEFAULT_PORTAL_LOGO_URL,
+  LOCAL_PORTAL_LOGO_KEY,
+} from './utils/portalAuth';
 import { ResearchSubmissionModal } from './components/ResearchSubmissionModal';
 import { ResearchDetailModal } from './components/ResearchDetailModal';
 import { ResearcherProfilesView } from './components/ResearcherProfilesView';
@@ -104,8 +108,16 @@ import { OverviewAnalyticsSection } from './components/OverviewAnalyticsSection'
 import {
   BnhsPortalLoginModal,
   BnhsPortalUserSession,
+  LoginModalViewMode,
 } from './components/BnhsPortalLoginModal';
 import { ResearchJournalView } from './components/ResearchJournalView';
+import { PublishJournalModal } from './components/PublishJournalModal';
+import { AddPublishedLinkModal } from './components/AddPublishedLinkModal';
+import { ResearcherProfileModal } from './components/ResearcherProfileModal';
+import {
+  UnifiedCrudHubModal,
+  UnifiedCrudMode,
+} from './components/UnifiedCrudHubModal';
 
 type ActiveSection =
   | 'overview'
@@ -142,6 +154,20 @@ export default function App() {
     }
   });
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [loginModalView, setLoginModalView] = useState<LoginModalViewMode>('login');
+  const [unifiedCrudMode, setUnifiedCrudMode] = useState<UnifiedCrudMode | null>(null);
+  const [isPublishJournalModalOpen, setIsPublishJournalModalOpen] = useState<boolean>(false);
+  const [isAddPublishedLinkModalOpen, setIsAddPublishedLinkModalOpen] = useState<boolean>(false);
+  const [editingJournalRecord, setEditingJournalRecord] = useState<PublishedJournalRecord | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
+  const [editingProfileRecord, setEditingProfileRecord] = useState<ResearcherProfileRecord | null>(null);
+  const [portalLogoUrl, setPortalLogoUrl] = useState<string>(() => {
+    try {
+      return localStorage.getItem(LOCAL_PORTAL_LOGO_KEY) || DEFAULT_PORTAL_LOGO_URL;
+    } catch {
+      return DEFAULT_PORTAL_LOGO_URL;
+    }
+  });
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [isCustomAdminDoc, setIsCustomAdminDoc] = useState<boolean>(false);
 
@@ -515,11 +541,11 @@ export default function App() {
           'Barobo NHS User',
         email: firebaseUser.email || portalSession?.email || '',
         emailVerified: firebaseUser.emailVerified,
-        accountClassification:
-          portalSession?.accountClassification ||
+        accountRole:
+          portalSession?.accountRole ||
           (firebaseUser.email === BOOTSTRAPPED_ADMIN_EMAIL
-            ? 'Administrator / Research Coordinator'
-            : 'Teacher / Student Account'),
+            ? 'Administrator'
+            : 'Teacher Researcher'),
       };
     }
     if (portalSession) {
@@ -528,11 +554,78 @@ export default function App() {
         displayName: portalSession.displayName,
         email: portalSession.email,
         emailVerified: true,
-        accountClassification: portalSession.accountClassification,
+        accountRole: portalSession.accountRole,
       };
     }
     return null;
   }, [firebaseUser, portalSession]);
+
+  // Real-time listener for editable BNHS Research Portal Logo (GIF Format Supported)
+  useEffect(() => {
+    const brandingRef = doc(db, 'portal_settings', 'branding');
+    const unsubBranding = onSnapshot(
+      brandingRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as { logoUrl?: string };
+          if (data.logoUrl && data.logoUrl.trim()) {
+            setPortalLogoUrl(data.logoUrl);
+            try {
+              localStorage.setItem(LOCAL_PORTAL_LOGO_KEY, data.logoUrl);
+            } catch {
+              // ignore storage quota
+            }
+          }
+        }
+      },
+      () => {
+        // Fallback to localStorage/default GIF silently
+      }
+    );
+    return () => unsubBranding();
+  }, []);
+
+  const handleSavePortalLogo = async (
+    newLogoUrl: string,
+    fileName: string,
+    mimeType: string
+  ) => {
+    const finalUrl = newLogoUrl.trim() || DEFAULT_PORTAL_LOGO_URL;
+    setPortalLogoUrl(finalUrl);
+    try {
+      localStorage.setItem(LOCAL_PORTAL_LOGO_KEY, finalUrl);
+    } catch {
+      // ignore
+    }
+    try {
+      const brandingRef = doc(db, 'portal_settings', 'branding');
+      const existing = await getDoc(brandingRef);
+      const createdAtVal = existing.exists()
+        ? existing.data().createdAt || serverTimestamp()
+        : serverTimestamp();
+      await setDoc(brandingRef, {
+        portalId: 'bnhs',
+        logoUrl: finalUrl.slice(0, 750000),
+        logoFileName: (fileName || 'BNHS_LOGO_animated.gif').slice(0, 260),
+        logoMimeType: (mimeType || 'image/gif').slice(0, 80),
+        updatedBy: (currentUser?.displayName || 'BNHS Administrator').slice(0, 160),
+        createdAt: createdAtVal,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'portal_settings/branding');
+    }
+    markAutoSynced();
+    showToast('BNHS Research Portal Logo updated across the entire system.');
+  };
+
+  const handleResetPortalLogo = async () => {
+    await handleSavePortalLogo(
+      DEFAULT_PORTAL_LOGO_URL,
+      'BNHS_LOGO_animated.gif',
+      'image/gif'
+    );
+  };
 
   const isCloudAdmin = useMemo(() => {
     if (!firebaseUser || !firebaseUser.emailVerified) return false;
@@ -2956,14 +3049,15 @@ export default function App() {
           className="inline-flex items-center gap-2 sm:gap-3 text-sm sm:text-lg font-display font-bold tracking-tight text-white whitespace-nowrap shrink-0 text-left"
         >
           <img
-            src="/assets/aistudio/BNHS_LOGO_animated.gif"
+            src={portalLogoUrl || DEFAULT_PORTAL_LOGO_URL}
             alt="Barobo National High School Official Animated Seal (GIF)"
+            referrerPolicy="no-referrer"
             className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-contain bg-white p-0.5 shadow-sm shrink-0 bnhs-logo-animate"
           />
           <span className="truncate">BNHS Research Portal</span>
         </button>
 
-        {/* Zone 2: 5 concise single-line navigation links */}
+        {/* Zone 2: 6 concise single-line navigation links */}
         <nav className="hidden md:flex items-center gap-4 lg:gap-7 text-xs font-medium text-rose-100">
           <button
             type="button"
@@ -3038,26 +3132,42 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Zone 3: User badge if authenticated, otherwise clean header */}
-        {currentUser && (
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {/* Zone 3: Login Button (Cute Cat Animation Modal) or Signed-In Account Badge */}
+        <div className="flex items-center gap-2 shrink-0">
+          {currentUser ? (
             <button
               type="button"
-              onClick={() => setIsLoginModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-medium text-rose-100 bg-[#520E17] hover:bg-[#430B13] border border-rose-800/80 transition-colors whitespace-nowrap shrink-0"
-              title="Click to view account details or switch role"
+              onClick={() => {
+                setLoginModalView('change_password');
+                setIsLoginModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 text-[11px] sm:text-xs font-medium text-rose-100 bg-[#520E17] hover:bg-[#430B13] border border-rose-800/80 transition-colors whitespace-nowrap shrink-0"
+              title="Account settings & Change Password"
             >
               <Users className="w-3.5 h-3.5 text-amber-300" />
-              <span className="max-w-[110px] sm:max-w-[150px] truncate text-white font-semibold">
+              <span className="max-w-[100px] sm:max-w-[150px] truncate text-white font-semibold">
                 {currentUser.displayName || 'BNHS Account'}
               </span>
             </button>
-          </div>
-        )}
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setLoginModalView('login');
+                setIsLoginModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-zinc-950 bg-amber-400 hover:bg-amber-300 transition-colors shadow-xs whitespace-nowrap shrink-0"
+              title="Open Interactive Cute Cat Login Form"
+            >
+              <LogIn className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Login</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Mobile Navigation Strip */}
-      <div className="md:hidden flex items-center gap-2 overflow-x-auto px-4 py-2.5 bg-[#520E17] text-rose-100 border-b border-rose-950">
+      <div className="md:hidden flex items-center gap-2 overflow-x-auto px-3 py-2.5 bg-[#520E17] text-rose-100 border-b border-rose-950">
         {(
           [
             { id: 'overview', label: 'Overview' },
@@ -3066,31 +3176,20 @@ export default function App() {
             { id: 'tuklas', label: 'TUKLAS Fair' },
             { id: 'journal', label: 'Research Journal' },
             { id: 'directory', label: 'Researchers & Admin' },
-            { id: 'submit', label: '+ Submit Research' },
           ] as const
         ).map((nav) => (
           <button
             key={nav.id}
             type="button"
             onClick={() => {
-              if (nav.id === 'submit') {
-                handleOpenSubmitModal(
-                  activeSection === 'basic' ||
-                    activeSection === 'action' ||
-                    activeSection === 'tuklas'
-                    ? activeSection
-                    : 'basic'
-                );
-              } else if (nav.id === 'basic' || nav.id === 'action' || nav.id === 'tuklas') {
+              if (nav.id === 'basic' || nav.id === 'action' || nav.id === 'tuklas') {
                 navigateToDivision(nav.id);
               } else {
                 setActiveSection(nav.id);
               }
             }}
             className={`px-3 py-1 text-xs font-medium whitespace-nowrap shrink-0 ${
-              nav.id === 'submit'
-                ? 'bg-amber-400 text-zinc-950 font-bold border border-amber-300'
-                : activeSection === nav.id
+              activeSection === nav.id
                 ? 'bg-amber-400 text-zinc-950 font-semibold'
                 : 'text-rose-100'
             }`}
@@ -3100,9 +3199,9 @@ export default function App() {
         ))}
       </div>
 
-      {/* Center-Aligned Institutional Sub-Bar in Maroon Color */}
-      <div className="bg-[#520E17] text-rose-100 border-b border-rose-950 px-3 sm:px-6 lg:px-10 py-2 sm:py-3">
-        <div className="max-w-7xl mx-auto flex flex-col items-center justify-center text-center gap-2 text-xs">
+      {/* Center-Aligned Institutional Sub-Bar with Unified Add/Create, Edit, and Delete Menus */}
+      <div className="bg-[#520E17] text-rose-100 border-b border-rose-950 px-3 sm:px-6 lg:px-10 py-2.5 sm:py-3">
+        <div className="max-w-7xl mx-auto flex flex-col items-center justify-center text-center gap-2.5 text-xs">
           <div className="flex items-center justify-center gap-2 flex-wrap">
             <span className="font-semibold text-white">
               Barobo National High School
@@ -3113,38 +3212,41 @@ export default function App() {
             <span className="text-amber-200 font-medium">Research and Innovation Portal</span>
           </div>
 
-          <div className="flex items-center justify-center gap-3 flex-wrap">
-            {/* Primary Submit Research Menu Action Placed Below Header */}
+          <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
+            {/* UNIFIED MENU 1: ALL ADD / CREATE IN THE SYSTEM */}
             <button
               type="button"
-              onClick={() =>
-                handleOpenSubmitModal(
-                  activeSection === 'basic' ||
-                    activeSection === 'action' ||
-                    activeSection === 'tuklas'
-                    ? activeSection
-                    : 'basic'
-                )
-              }
-              className="inline-flex items-center gap-1.5 px-3.5 py-1 text-xs font-bold text-zinc-950 bg-amber-400 hover:bg-amber-300 transition-colors shadow-xs whitespace-nowrap shrink-0"
-              title="Submit a new Basic Research, Action Research, or TUKLAS proposal"
+              onClick={() => setUnifiedCrudMode('create')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-zinc-950 bg-amber-400 hover:bg-amber-300 transition-colors shadow-xs whitespace-nowrap shrink-0"
+              title="Unified Add / Create menu for all research, journal, profile, overview, gallery, and video entries"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Submit Research</span>
+              <span>Add / Create</span>
             </button>
 
-            <span aria-hidden="true" className="text-rose-300/60">|</span>
-
+            {/* UNIFIED MENU 2: ALL EDIT IN THE SYSTEM (INCLUDING GIF LOGO) */}
             <button
               type="button"
-              onClick={() => downloadStandalonePortalHtml(allResearches)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-300 hover:text-amber-200 hover:underline whitespace-nowrap shrink-0"
+              onClick={() => setUnifiedCrudMode('edit')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-white/15 hover:bg-white/25 border border-white/25 transition-colors whitespace-nowrap shrink-0"
+              title="Unified Edit menu for Portal GIF Logo, research entries, published journals, profiles, overview, gallery, and videos"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download BNHS Research Portal (HTML)</span>
+              <Edit3 className="w-3.5 h-3.5 text-amber-300" />
+              <span>Edit</span>
             </button>
 
-            <span aria-hidden="true" className="text-rose-300/60">|</span>
+            {/* UNIFIED MENU 3: ALL DELETE IN THE SYSTEM */}
+            <button
+              type="button"
+              onClick={() => setUnifiedCrudMode('delete')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-rose-100 bg-red-950/70 hover:bg-red-800 border border-red-400/35 transition-colors whitespace-nowrap shrink-0"
+              title="Unified Delete menu for safely removing records across the entire system"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-300" />
+              <span>Delete</span>
+            </button>
+
+            <span aria-hidden="true" className="text-rose-300/60 hidden sm:inline">|</span>
 
             <button
               type="button"
@@ -3160,43 +3262,48 @@ export default function App() {
               <span>
                 {cloudSyncState === 'syncing'
                   ? 'Cloud Syncing...'
-                  : `Cloud Synced (Auto-Saved ${lastSyncedTime})`}
+                  : `Cloud Synced (${lastSyncedTime})`}
               </span>
             </button>
 
-            <span aria-hidden="true" className="text-rose-300/60">|</span>
-
-            {currentUser ? (
-              <div className="flex items-center justify-center gap-3 flex-wrap">
-                <span className="text-rose-100">
-                  <strong className="text-white">
-                    {currentUser.displayName || 'Barobo NHS'}
-                  </strong>{' '}
-                  ({currentUser.accountClassification || (isAdmin ? 'Administrator / Coordinator' : 'Teacher / Student Account')})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsLoginModalOpen(true)}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-rose-200 hover:text-white whitespace-nowrap shrink-0"
-                >
-                  <span>Switch Account</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setPortalSession(null);
-                    if (auth.currentUser) {
-                      await signOutUser();
-                    }
-                    showToast('Signed out of Barobo NHS Portal.');
-                  }}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-amber-300 hover:text-white whitespace-nowrap shrink-0"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Sign Out</span>
-                </button>
-              </div>
-            ) : null}
+            {currentUser && (
+              <>
+                <span aria-hidden="true" className="text-rose-300/60 hidden sm:inline">|</span>
+                <div className="flex items-center justify-center gap-2.5 flex-wrap">
+                  <span className="text-rose-100">
+                    <strong className="text-white">
+                      {currentUser.displayName || 'Barobo NHS'}
+                    </strong>{' '}
+                    ({currentUser.accountRole})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginModalView('change_password');
+                      setIsLoginModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-white whitespace-nowrap shrink-0"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>Change Password</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setPortalSession(null);
+                      if (auth.currentUser) {
+                        await signOutUser();
+                      }
+                      showToast('Signed out of Barobo NHS Portal.');
+                    }}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-rose-200 hover:text-white whitespace-nowrap shrink-0"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -3274,8 +3381,9 @@ export default function App() {
                   </div>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                     <img
-                      src="/assets/aistudio/BNHS_LOGO_animated.gif"
+                      src={portalLogoUrl || DEFAULT_PORTAL_LOGO_URL}
                       alt="Barobo National High School Official Animated Seal (GIF)"
+                      referrerPolicy="no-referrer"
                       className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-full object-contain shrink-0 border-2 border-[#6B1420]/20 bg-white p-1 shadow-sm bnhs-logo-animate"
                     />
                     <h1
@@ -3290,25 +3398,16 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Primary & Secondary Actions */}
+                {/* Primary & Secondary Navigation Actions */}
                 <div className="space-y-4 pt-2">
                   <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                     <button
                       type="button"
-                      onClick={() => handleOpenSubmitModal('basic')}
-                      className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-5 sm:py-2.5 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
+                      onClick={() => setActiveSection('journal')}
+                      className="inline-flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0"
                     >
-                      <Plus className="w-4 h-4" />
-                      <span>Submit Research Entry</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => downloadStandalonePortalHtml(allResearches)}
-                      className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs font-semibold text-zinc-900 bg-[#FAF9F5] border border-zinc-300 hover:bg-zinc-100 transition-colors whitespace-nowrap shrink-0"
-                    >
-                      <Download className="w-4 h-4 text-[#6B1420]" />
-                      <span>Download BNHS Research Portal (HTML)</span>
+                      <BookOpen className="w-4 h-4 text-amber-300" />
+                      <span>Explore Research Journal ({activePublishedJournals.length})</span>
                     </button>
 
                     <button
@@ -3317,16 +3416,16 @@ export default function App() {
                         setActiveSection('directory');
                         setDirectoryTab('admin');
                       }}
-                      className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 transition-colors whitespace-nowrap shrink-0"
+                      className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs font-semibold text-zinc-900 bg-[#FAF9F5] border border-zinc-300 hover:bg-zinc-100 transition-colors whitespace-nowrap shrink-0"
                     >
-                      <ShieldCheck className="w-4 h-4 text-amber-700" />
-                      <span>Admin &amp; Overview Customization</span>
+                      <ShieldCheck className="w-4 h-4 text-[#6B1420]" />
+                      <span>Administrator Dashboard &amp; Evaluation</span>
                     </button>
                   </div>
 
                   <div className="text-xs text-zinc-500 pt-2 border-t border-zinc-100">
-                    <strong className="text-zinc-700">Cloud + Offline Hybrid Ready:</strong>{' '}
-                    Entries are synchronized across computers via our shared database, or you can download the standalone HTML portal to open directly in Google Chrome or Microsoft Edge.
+                    <strong className="text-zinc-700">Cloud Synchronized Institutional Repository:</strong>{' '}
+                    All research studies, published journals, researcher profiles, and visual galleries automatically synchronize across desktop, tablet, and mobile devices.
                   </div>
                 </div>
               </div>
@@ -3695,14 +3794,6 @@ export default function App() {
                   Completed and ongoing foundational research investigating curriculum alignment, learner socio-demographic profiles across Barobo’s coastal and upland barangays, educational governance, and longitudinal graduate outcomes.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => handleOpenSubmitModal('basic')}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0 self-start"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Submit Basic Research</span>
-              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3760,14 +3851,6 @@ export default function App() {
                   Organized according to the seven official themes of the Department of Education Basic Education Research Agenda (BERA). Click any theme to filter classroom and school-level interventions.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => handleOpenSubmitModal('action')}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0 self-start"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Submit Action Research</span>
-              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -3826,14 +3909,6 @@ export default function App() {
                   Organized across five major categories — Life Science (LS), Physical Science (PS), Robotics and Intelligent Machines (RIM), Mathematics and Computational Sciences (MCS), and the Innovation Expo — with specialized subcategories.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => handleOpenSubmitModal('tuklas')}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors whitespace-nowrap shrink-0 self-start"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Submit TUKLAS Project</span>
-              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -4219,21 +4294,8 @@ export default function App() {
                   No Matching Research Entries Found
                 </h3>
                 <p className="text-xs text-zinc-500 max-w-md mx-auto">
-                  No research records match your current search or filter criteria. Try resetting the filters or submit a new research entry to this division.
+                  No research records match your current search or filter criteria. Try resetting the filters above or use the unified Add / Create menu in the top bar.
                 </p>
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleOpenSubmitModal(
-                        effectiveDivision === 'all' ? 'basic' : effectiveDivision
-                      )
-                    }
-                    className="px-4 py-2 text-xs font-semibold text-white bg-[#6B1420] hover:bg-[#520E17] transition-colors"
-                  >
-                    + Submit First Entry in Category
-                  </button>
-                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -4366,52 +4428,6 @@ export default function App() {
                             <span>{commentCount}</span>
                           </button>
 
-                          {/* Edit Button on Every Posted Research */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingRecord(record);
-                              setSubmitModalDivision(record.division);
-                              setIsSubmitModalOpen(true);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-zinc-800 bg-zinc-100 hover:bg-zinc-200 transition-colors whitespace-nowrap shrink-0"
-                          >
-                            <Edit3 className="w-3.5 h-3.5 text-[#6B1420]" />
-                            <span>Edit</span>
-                          </button>
-
-                          {/* Delete Button on Every Posted Research (with inline confirm) */}
-                          {confirmDeleteCardId === record.id ? (
-                            <div className="inline-flex items-center gap-1 bg-red-50 border border-red-200 px-2 py-1">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  await handleDeleteResearch(record);
-                                  setConfirmDeleteCardId(null);
-                                }}
-                                className="px-2 py-0.5 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800"
-                              >
-                                Confirm Delete
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteCardId(null)}
-                                className="px-1.5 py-0.5 text-[11px] text-zinc-600 hover:text-zinc-900"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteCardId(record.id)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors whitespace-nowrap shrink-0"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete</span>
-                            </button>
-                          )}
-
                           {record.driveUrl && (
                             <a
                               href={record.driveUrl}
@@ -4454,14 +4470,9 @@ export default function App() {
         {activeSection === 'journal' && (
           <ResearchJournalView
             journals={activePublishedJournals}
-            isAdmin={isAdmin}
-            onPublishJournal={handleCreatePublishedJournal}
-            onEditJournal={handleEditPublishedJournal}
-            onDeleteJournal={handleDeletePublishedJournal}
+            portalLogoUrl={portalLogoUrl}
             onIncrementViews={handleIncrementJournalViews}
             onIncrementDownloads={handleIncrementJournalDownloads}
-            cloudSyncState={cloudSyncState}
-            lastSyncedTime={lastSyncedTime}
           />
         )}
 
@@ -4515,6 +4526,7 @@ export default function App() {
               />
             ) : (
               <AdminEvaluationView
+                portalLogoUrl={portalLogoUrl}
                 researches={allResearches}
                 isAdmin={isAdmin}
                 currentUserUid={currentUser?.uid}
@@ -4565,8 +4577,9 @@ export default function App() {
         <div className="max-w-7xl mx-auto py-6 sm:py-7 px-3 sm:px-6 lg:px-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <img
-              src="/assets/aistudio/BNHS_LOGO_animated.gif"
+              src={portalLogoUrl || DEFAULT_PORTAL_LOGO_URL}
               alt="Barobo National High School Official Animated Seal (GIF)"
+              referrerPolicy="no-referrer"
               className="w-12 h-12 rounded-full object-contain bg-white border-2 border-amber-300/60 p-0.5 shrink-0 bnhs-logo-animate"
             />
             <div>
@@ -4592,26 +4605,10 @@ export default function App() {
             <span aria-hidden="true" className="text-rose-300">·</span>
             <button
               type="button"
-              onClick={() => downloadStandalonePortalHtml(allResearches)}
-              className="text-amber-300 hover:text-white font-semibold transition-colors"
-            >
-              Download Portal HTML
-            </button>
-            <span aria-hidden="true" className="text-rose-300">·</span>
-            <button
-              type="button"
               onClick={() => downloadResearchInventoryCsv(allResearches)}
               className="text-amber-300 hover:text-white font-semibold transition-colors"
             >
               Export Master Inventory (.CSV)
-            </button>
-            <span aria-hidden="true" className="text-rose-300">·</span>
-            <button
-              type="button"
-              onClick={() => handleOpenSubmitModal('basic')}
-              className="text-amber-300 hover:text-white font-semibold transition-colors"
-            >
-              Submit Manuscript
             </button>
           </div>
         </div>
@@ -4718,20 +4715,150 @@ export default function App() {
         onUnsubscribe={handleUnsubscribe}
       />
 
-      {/* BAROBO NHS (TEACHER / STUDENT / ADMIN LOGIN) PERSISTENT MODAL */}
+      {/* INTERACTIVE CUTE CAT LOGIN, CHANGE PASSWORD & FORGOT PASSWORD MODAL */}
       <BnhsPortalLoginModal
         isOpen={isLoginModalOpen}
+        initialView={loginModalView}
+        currentSession={portalSession}
+        portalLogoUrl={portalLogoUrl}
         onClose={() => setIsLoginModalOpen(false)}
-        onSignInPortalSession={(session) => {
+        onLoginSuccess={(session) => {
           setPortalSession(session);
-          showToast(
-            `Signed in as ${session.displayName} (${session.accountClassification}).`
-          );
+          showToast(`Signed in as ${session.displayName} (${session.accountRole}).`);
         }}
-        onSignInWithGoogle={async () => {
+        onGoogleSignIn={async () => {
           await signInWithGooglePopup();
           showToast('Signed in with Google Account.');
         }}
+        onPasswordChanged={(msg) => showToast(msg)}
+        onForgotPasswordDispatched={(info) => {
+          const alertRecord: EmailAlertLogRecord = {
+            id: `pwd_reset_${Date.now()}`,
+            recipientEmail: info.recipientEmail,
+            researchId: 'portal_auth',
+            researchTitle: 'BNHS Portal Password Recovery',
+            triggerType: 'status_change',
+            subject: info.subject,
+            messageBody: info.messageBody,
+            dispatchedAtIso: new Date().toISOString(),
+          };
+          setEmailAlertLogs((prev) => [alertRecord, ...prev]);
+          setLatestEmailAlertBanner(alertRecord);
+          showToast(`Generated recovery password prepared for ${info.recipientEmail}.`);
+        }}
+      />
+
+      {/* UNIFIED CENTRALIZED ADD/CREATE, EDIT (INCLUDING GIF LOGO), AND DELETE HUB */}
+      <UnifiedCrudHubModal
+        isOpen={Boolean(unifiedCrudMode)}
+        mode={unifiedCrudMode || 'create'}
+        onModeChange={(nextMode) => setUnifiedCrudMode(nextMode)}
+        onClose={() => setUnifiedCrudMode(null)}
+        portalLogoUrl={portalLogoUrl}
+        onSavePortalLogo={handleSavePortalLogo}
+        onResetPortalLogo={handleResetPortalLogo}
+        researches={allResearches}
+        journals={activePublishedJournals}
+        profiles={allProfiles}
+        overviewItems={activeOverviewItems}
+        galleryItems={activeGalleryItems}
+        informationItems={activeInformationItems}
+        onLaunchCreateResearch={(div) => handleOpenSubmitModal(div)}
+        onLaunchEditResearch={(rec) => {
+          setEditingRecord(rec);
+          setSubmitModalDivision(rec.division);
+          setIsSubmitModalOpen(true);
+        }}
+        onLaunchEvaluateResearch={(rec) => setSelectedDetailRecord(rec)}
+        onDeleteResearch={handleDeleteResearch}
+        onLaunchCreateJournalLink={() => {
+          setEditingJournalRecord(null);
+          setIsAddPublishedLinkModalOpen(true);
+        }}
+        onLaunchCreateJournalUpload={() => {
+          setEditingJournalRecord(null);
+          setIsPublishJournalModalOpen(true);
+        }}
+        onLaunchEditJournal={(journal) => {
+          setEditingJournalRecord(journal);
+          if (journal.fileSourceType === 'link' || Boolean(journal.publishedLinkUrl)) {
+            setIsAddPublishedLinkModalOpen(true);
+          } else {
+            setIsPublishJournalModalOpen(true);
+          }
+        }}
+        onDeleteJournal={handleDeletePublishedJournal}
+        onLaunchCreateProfile={() => {
+          setEditingProfileRecord(null);
+          setIsProfileModalOpen(true);
+        }}
+        onLaunchEditProfile={(prof) => {
+          setEditingProfileRecord(prof);
+          setIsProfileModalOpen(true);
+        }}
+        onDeleteProfile={handleDeleteResearcherProfile}
+        onSaveOverviewItem={handleSaveOverviewItem}
+        onDeleteOverviewItem={handleDeleteOverviewItem}
+        onSaveGalleryItem={handleSaveGalleryItem}
+        onBulkSaveGalleryItems={handleBulkSaveGalleryItems}
+        onDeleteGalleryItem={handleDeleteGalleryItem}
+        onDeleteAllGalleryItems={handleDeleteAllGalleryItems}
+        onSaveInformationItem={handleSaveInformationItem}
+        onDeleteInformationItem={handleDeleteInformationItem}
+      />
+
+      {/* PUBLISHED RESEARCH JOURNAL CREATE / EDIT MODALS (LAUNCHED FROM UNIFIED HUB) */}
+      <PublishJournalModal
+        isOpen={isPublishJournalModalOpen}
+        onClose={() => {
+          setIsPublishJournalModalOpen(false);
+          setEditingJournalRecord(null);
+        }}
+        editingJournal={editingJournalRecord}
+        onPublish={async (data) => {
+          if (editingJournalRecord) {
+            await handleEditPublishedJournal({
+              ...editingJournalRecord,
+              ...data,
+              updatedAtIso: new Date().toISOString(),
+            });
+          } else {
+            await handleCreatePublishedJournal(data);
+          }
+        }}
+      />
+
+      <AddPublishedLinkModal
+        isOpen={isAddPublishedLinkModalOpen}
+        onClose={() => {
+          setIsAddPublishedLinkModalOpen(false);
+          setEditingJournalRecord(null);
+        }}
+        editingJournal={editingJournalRecord}
+        onPublish={async (data) => {
+          if (editingJournalRecord) {
+            await handleEditPublishedJournal({
+              ...editingJournalRecord,
+              ...data,
+              updatedAtIso: new Date().toISOString(),
+            });
+          } else {
+            await handleCreatePublishedJournal(data);
+          }
+        }}
+      />
+
+      {/* RESEARCHER PROFILE CREATE / EDIT MODAL (LAUNCHED FROM UNIFIED HUB) */}
+      <ResearcherProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => {
+          setIsProfileModalOpen(false);
+          setEditingProfileRecord(null);
+        }}
+        editingProfile={editingProfileRecord}
+        defaultUid={currentUser?.uid || 'local_researcher'}
+        defaultName={currentUser?.displayName || ''}
+        onSaveProfile={handleSaveResearcherProfile}
       />
     </div>
   );

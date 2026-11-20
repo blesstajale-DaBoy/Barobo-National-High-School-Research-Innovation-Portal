@@ -819,6 +819,106 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "PortalBrandingSetting": {
+      "title": "PortalBrandingSetting",
+      "description": "Editable branding configuration for the BNHS Research Portal, including animated GIF logo support.",
+      "type": "object",
+      "properties": {
+        "portalId": {
+          "type": "string",
+          "enum": ["bnhs"],
+          "maxLength": 10
+        },
+        "logoUrl": {
+          "type": "string",
+          "maxLength": 750000,
+          "description": "Animated GIF, PNG, JPG, WEBP, SVG data URL or HTTPS/Google Drive URL for the official BNHS Research Portal logo."
+        },
+        "logoFileName": {
+          "type": "string",
+          "maxLength": 260
+        },
+        "logoMimeType": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "updatedBy": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "portalId",
+        "logoUrl",
+        "logoFileName",
+        "logoMimeType",
+        "updatedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PortalAccountCredential": {
+      "title": "PortalAccountCredential",
+      "description": "Role-based portal credential record supporting default passwords, user password updates, and email-dispatched password resets (non-listable).",
+      "type": "object",
+      "properties": {
+        "portalId": {
+          "type": "string",
+          "enum": ["bnhs"],
+          "maxLength": 10
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "Administrator",
+            "Researcher Coordinator/Adviser",
+            "Teacher Researcher",
+            "Master Teacher Researcher",
+            "School Research Grammarian",
+            "School Research Statistician",
+            "Student Researcher"
+          ],
+          "maxLength": 60
+        },
+        "emailHash": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "passwordHash": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 200
+        },
+        "mustChangePassword": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "portalId",
+        "role",
+        "emailHash",
+        "passwordHash",
+        "mustChangePassword",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -865,6 +965,14 @@
     "/published_journals/{journalId}": {
       "schema": { "$ref": "#/entities/PublishedJournalEntry" },
       "description": "Official published research journal manuscripts and articles library."
+    },
+    "/portal_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/PortalBrandingSetting" },
+      "description": "Portal-wide branding settings including the editable animated GIF logo."
+    },
+    "/portal_accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/PortalAccountCredential" },
+      "description": "Hashed role-based portal credentials supporting password changes and generated password resets."
     }
   }
 }

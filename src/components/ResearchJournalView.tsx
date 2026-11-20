@@ -2,59 +2,32 @@ import React, { useState, useMemo } from 'react';
 import {
   BookOpen,
   Search,
-  Filter,
-  Plus,
   Download,
   ExternalLink,
   Copy,
   Check,
   FileText,
-  Calendar,
-  Layers,
-  Sparkles,
-  ShieldCheck,
-  Trash2,
-  Edit3,
   Link2,
-  CheckCircle2,
-  BookMarked,
-  GraduationCap,
-  Award,
-  Clock,
-  ArrowUpRight,
 } from 'lucide-react';
 import {
   PublishedJournalRecord,
   JournalDivisionType,
 } from '../data/bnhsTaxonomy';
-import { PublishJournalModal } from './PublishJournalModal';
 import { JournalReaderModal } from './JournalReaderModal';
-import { AddPublishedLinkModal } from './AddPublishedLinkModal';
+import { DEFAULT_PORTAL_LOGO_URL } from '../utils/portalAuth';
 
 interface ResearchJournalViewProps {
   journals: PublishedJournalRecord[];
-  isAdmin: boolean;
-  onPublishJournal: (
-    journal: Omit<PublishedJournalRecord, 'id' | 'createdAtIso' | 'updatedAtIso'>
-  ) => Promise<void> | void;
-  onEditJournal: (journal: PublishedJournalRecord) => Promise<void> | void;
-  onDeleteJournal: (id: string) => Promise<void> | void;
+  portalLogoUrl?: string;
   onIncrementViews?: (id: string) => void;
   onIncrementDownloads?: (id: string) => void;
-  cloudSyncState?: 'synced' | 'syncing' | 'auto_saved' | 'error';
-  lastSyncedTime?: string;
 }
 
 export function ResearchJournalView({
   journals,
-  isAdmin,
-  onPublishJournal,
-  onEditJournal,
-  onDeleteJournal,
+  portalLogoUrl = DEFAULT_PORTAL_LOGO_URL,
   onIncrementViews,
   onIncrementDownloads,
-  cloudSyncState = 'synced',
-  lastSyncedTime = 'Just now',
 }: ResearchJournalViewProps) {
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,13 +35,9 @@ export function ResearchJournalView({
   const [selectedVolume, setSelectedVolume] = useState<string>('all');
   const [selectedFormat, setSelectedFormat] = useState<string>('all');
 
-  // Modals
-  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
-  const [isAddPublishedLinkModalOpen, setIsAddPublishedLinkModalOpen] = useState(false);
-  const [editingJournal, setEditingJournal] = useState<PublishedJournalRecord | null>(null);
+  // Reader modal & citation copy state
   const [readingJournal, setReadingJournal] = useState<PublishedJournalRecord | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Available Volumes
   const availableVolumes = useMemo(() => {
@@ -195,7 +164,7 @@ export function ResearchJournalView({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-zinc-200 pb-6">
           <div className="flex flex-col sm:flex-row sm:items-start gap-4">
             <img
-              src="/assets/aistudio/BNHS_LOGO_animated.gif"
+              src={portalLogoUrl || DEFAULT_PORTAL_LOGO_URL}
               alt="Barobo National High School Official Animated Seal (GIF)"
               className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-contain shrink-0 border-2 border-[#6B1420]/20 bg-white p-1 shadow-sm bnhs-logo-animate"
             />
@@ -208,35 +177,9 @@ export function ResearchJournalView({
                 Research Journal (Published Research Library)
               </h1>
               <p className="text-xs sm:text-sm text-zinc-600 leading-relaxed max-w-3xl">
-                The official institutional repository of published, peer-reviewed research manuscripts, action research studies, and TUKLAS STEM innovations at Barobo National High School. Read, cite, and download manuscripts via direct local file or Google Drive.
+                The official institutional repository of published, peer-reviewed research manuscripts, action research studies, and TUKLAS STEM innovations at Barobo National High School. Read abstracts, copy citations, and access full manuscripts via link, PDF, or Google Drive.
               </p>
             </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
-            {/* Primary Action: Add Already Published Research (Link Only) */}
-            <button
-              type="button"
-              onClick={() => setIsAddPublishedLinkModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 px-5 py-3 text-xs font-bold text-zinc-950 bg-amber-400 hover:bg-amber-300 transition-colors shadow-sm whitespace-nowrap"
-              title="Add already published research through a link only, along with the abstract"
-            >
-              <Link2 className="w-4 h-4 text-zinc-950 stroke-[2.5]" />
-              <span>Add Already Published Research (Link &amp; Abstract)</span>
-            </button>
-
-            {/* Secondary Action: Upload Manuscript (PDF / Local) */}
-            <button
-              type="button"
-              onClick={() => {
-                setEditingJournal(null);
-                setIsPublishModalOpen(true);
-              }}
-              className="inline-flex items-center justify-center gap-2 px-4 py-3 text-xs font-semibold text-zinc-800 bg-[#FAF9F5] border border-zinc-300 hover:bg-zinc-100 transition-colors whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4 text-[#6B1420]" />
-              <span>Upload Full Manuscript (PDF)</span>
-            </button>
           </div>
         </div>
 
@@ -529,131 +472,17 @@ export function ResearchJournalView({
                     </button>
                   </div>
                 </div>
-
-                {/* Edit & Delete Controls Row */}
-                <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-zinc-200/80">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingJournal(journal);
-                      if (
-                        journal.fileSourceType === 'link' ||
-                        Boolean(journal.publishedLinkUrl)
-                      ) {
-                        setIsAddPublishedLinkModalOpen(true);
-                      } else {
-                        setIsPublishModalOpen(true);
-                      }
-                    }}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:text-[#6B1420] bg-white border border-zinc-200 hover:border-[#6B1420] transition-colors"
-                    title="Edit published research details, link, or abstract"
-                  >
-                    <Edit3 className="w-3.5 h-3.5 text-[#6B1420]" />
-                    <span>Edit</span>
-                  </button>
-
-                  {confirmDeleteId === journal.id ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-red-700 font-medium">
-                        Delete entry?
-                      </span>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await onDeleteJournal(journal.id);
-                          setConfirmDeleteId(null);
-                        }}
-                        className="px-2.5 py-1 text-[11px] font-semibold text-white bg-red-700 hover:bg-red-800 transition-colors"
-                      >
-                        Confirm Delete
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteId(null)}
-                        className="px-2 py-1 text-[11px] font-medium text-zinc-600 hover:text-zinc-900 bg-white border border-zinc-200"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteId(journal.id)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-red-700 hover:text-white bg-white hover:bg-red-700 border border-red-200 hover:border-red-700 transition-colors"
-                      title="Delete this published research from Research Journal"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete</span>
-                    </button>
-                  )}
-                </div>
               </div>
             </article>
           ))}
         </div>
       )}
 
-      {/* Publish / Edit Modal */}
-      <PublishJournalModal
-        isOpen={isPublishModalOpen}
-        onClose={() => {
-          setIsPublishModalOpen(false);
-          setEditingJournal(null);
-        }}
-        editingJournal={editingJournal}
-        onPublish={async (data) => {
-          if (editingJournal) {
-            await onEditJournal({
-              ...editingJournal,
-              ...data,
-              updatedAtIso: new Date().toISOString(),
-            });
-          } else {
-            await onPublishJournal(data);
-          }
-        }}
-      />
-
-      {/* Add / Edit Already Published Research (Link & Abstract) Modal */}
-      <AddPublishedLinkModal
-        isOpen={isAddPublishedLinkModalOpen}
-        onClose={() => {
-          setIsAddPublishedLinkModalOpen(false);
-          setEditingJournal(null);
-        }}
-        editingJournal={editingJournal}
-        onPublish={async (data) => {
-          if (editingJournal) {
-            await onEditJournal({
-              ...editingJournal,
-              ...data,
-              updatedAtIso: new Date().toISOString(),
-            });
-          } else {
-            await onPublishJournal(data);
-          }
-        }}
-      />
-
-      {/* Reader Modal */}
+      {/* Reader Modal (Read-only viewing for end users) */}
       <JournalReaderModal
         journal={readingJournal}
         onClose={() => setReadingJournal(null)}
         onDownload={handleDownloadFile}
-        onEdit={(journal) => {
-          setEditingJournal(journal);
-          if (
-            journal.fileSourceType === 'link' ||
-            Boolean(journal.publishedLinkUrl)
-          ) {
-            setIsAddPublishedLinkModalOpen(true);
-          } else {
-            setIsPublishModalOpen(true);
-          }
-        }}
-        onDelete={async (journal) => {
-          await onDeleteJournal(journal.id);
-        }}
       />
     </section>
   );
