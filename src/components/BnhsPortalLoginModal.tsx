@@ -60,359 +60,559 @@ interface BnhsPortalLoginModalProps {
   }) => void;
 }
 
-type CatMood = 'idle' | 'tracking' | 'covering' | 'peeking' | 'error' | 'happy';
+type CatMood =
+  | 'idle'
+  | 'tracking'
+  | 'password_closed'
+  | 'peeking'
+  | 'sad_forgot'
+  | 'happy_jump'
+  | 'error';
 
 /**
- * Interactive Cute Cat SVG Mascot that reacts in real-time to login form inputs:
- * - Tracks eyes while typing name/email
- * - Covers both eyes with fluffy paws on password focus
- * - Peeks with one eye when toggling "Show Password"
- * - Flattens ears & shakes head on wrong password
- * - Squints happily (^ ^) on successful authentication or password update
+ * Interactive Cute Cat SVG Mascot with expressive real-time animations:
+ * - Always alive: continuous eye movement/blinking & gently wagging tail
+ * - Inputting password: eyes visibly close softly; done inputting (blur): eyes open back up
+ * - Show password toggle: peeks playfully with one open eye
+ * - Forgot Password mode: sad watery eyes, worried brows, droopy ears & actively swinging tail
+ * - Change Password mode & success: happy ^ ^ squinting eyes, rosy cheeks & joyful jumping bounce!
  */
 const CuteCatMascot: React.FC<{
   mood: CatMood;
   gazeOffset: number; // -1 (left) to +1 (right)
-}> = ({ mood, gazeOffset }) => {
+  isSadTracking?: boolean;
+}> = ({ mood, gazeOffset, isSadTracking = false }) => {
   const clampedGaze = Math.max(-1, Math.min(1, gazeOffset));
-  const pupilX = clampedGaze * 5.2;
-  const pupilY = mood === 'tracking' ? 2.8 : 0.8;
-  const headTilt = mood === 'tracking' ? clampedGaze * 4 : mood === 'peeking' ? -5 : 0;
+  const pupilX = clampedGaze * 4.8;
+  const pupilY = mood === 'sad_forgot' ? 3.2 : mood === 'tracking' ? 2.6 : 0.8;
+  const headTilt =
+    mood === 'tracking'
+      ? clampedGaze * 4
+      : mood === 'peeking'
+      ? -5
+      : mood === 'sad_forgot'
+      ? -3.5
+      : 0;
 
-  const isCovering = mood === 'covering';
+  const isPasswordClosed = mood === 'password_closed';
   const isPeeking = mood === 'peeking';
-  const isHappy = mood === 'happy';
+  const isSad = mood === 'sad_forgot';
+  const isHappyJump = mood === 'happy_jump';
   const isError = mood === 'error';
+  const isIdle = mood === 'idle';
+
+  const tailAnimClass = isSad
+    ? 'cat-tail-swing-sad'
+    : isHappyJump
+    ? 'cat-tail-wag-happy'
+    : 'cat-tail-wag-gentle';
 
   return (
     <div className="relative flex flex-col items-center select-none pointer-events-none">
       {/* Subtle status speech pill */}
       <div
         className={`mb-1 px-2.5 py-0.5 text-[10px] font-mono font-semibold tracking-wide transition-all duration-300 border ${
-          isHappy
+          isHappyJump
             ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+            : isSad
+            ? 'bg-amber-50 text-amber-900 border-amber-300'
             : isError
             ? 'bg-red-50 text-red-700 border-red-200'
-            : isCovering
+            : isPasswordClosed
             ? 'bg-amber-50 text-amber-900 border-amber-200'
             : isPeeking
             ? 'bg-rose-50 text-[#6B1420] border-rose-200'
             : 'bg-[#FAF9F5] text-zinc-600 border-zinc-200'
         }`}
       >
-        {isHappy && 'Purr-fect! Welcome to BNHS Portal'}
-        {isError && 'Oops! Check your password again'}
-        {isCovering && 'Paws up — your password is safe!'}
-        {isPeeking && 'Just a tiny peek to verify...'}
+        {isHappyJump && 'Yay! Happy eyes & jumping for your new password!'}
+        {isSad && 'Aw, forgot password? Swinging tail while we recover it...'}
+        {isError && 'Oops! Please check your credentials again'}
+        {isPasswordClosed && 'Eyes closed while you type your secret password!'}
+        {isPeeking && 'Just a tiny peek to check your password...'}
         {mood === 'tracking' && 'Watching you type your credentials...'}
         {mood === 'idle' && 'Meow! Choose your BNHS role below'}
       </div>
 
       <div
-        className={`w-36 h-28 sm:w-40 sm:h-32 transition-transform duration-300 ${
-          isError ? 'animate-[wiggle_0.38s_ease-in-out_2]' : ''
+        className={`w-40 h-32 sm:w-44 sm:h-36 transition-transform duration-300 ${
+          isError ? 'cat-wiggle-error' : ''
         }`}
         style={{
           transform: `rotate(${headTilt}deg)`,
         }}
       >
         <svg
-          viewBox="0 0 220 175"
+          viewBox="0 0 220 185"
           className="w-full h-full drop-shadow-md overflow-visible"
           aria-hidden="true"
         >
-          {/* Soft backdrop halo */}
-          <ellipse cx="110" cy="158" rx="72" ry="12" fill="#6B1420" opacity="0.12" />
-
-          {/* Wagging tail peeking from right */}
-          <path
-            d={
-              isHappy
-                ? 'M 164 138 Q 204 118 192 86'
-                : 'M 164 142 Q 198 134 190 108'
-            }
-            fill="none"
-            stroke="#E9A96B"
-            strokeWidth="12"
-            strokeLinecap="round"
-            style={{ transition: 'all 300ms ease' }}
-          />
-          <path
-            d={
-              isHappy
-                ? 'M 164 138 Q 204 118 192 86'
-                : 'M 164 142 Q 198 134 190 108'
-            }
-            fill="none"
-            stroke="#FFF4E4"
-            strokeWidth="4"
-            strokeDasharray="6 10"
-            strokeLinecap="round"
-            style={{ transition: 'all 300ms ease' }}
-          />
-
-          {/* Cat shoulders / body */}
-          <path
-            d="M 54 162 C 54 126, 75 112, 110 112 C 145 112, 166 126, 166 162 Z"
-            fill="#F4BA7E"
-            stroke="#6B1420"
-            strokeWidth="2.5"
-          />
-          {/* Cream chest fluff */}
-          <ellipse cx="110" cy="146" rx="28" ry="18" fill="#FFF7EB" />
-
-          {/* BNHS Maroon Academic Bowtie */}
-          <g transform="translate(110, 128)">
-            <polygon points="0,0 -18,-9 -18,9" fill="#6B1420" />
-            <polygon points="0,0 18,-9 18,9" fill="#6B1420" />
-            <circle cx="0" cy="0" r="5" fill="#F59E0B" stroke="#6B1420" strokeWidth="1.5" />
-          </g>
-
-          {/* Left Ear */}
-          <g
-            style={{
-              transformOrigin: '64px 56px',
-              transform: isError
-                ? 'rotate(-24deg) translateY(6px)'
-                : isHappy
-                ? 'rotate(6deg)'
-                : 'rotate(0deg)',
-              transition: 'transform 260ms ease',
-            }}
-          >
-            <path
-              d="M 52 72 L 42 22 L 88 45 Z"
-              fill="#F4BA7E"
-              stroke="#6B1420"
-              strokeWidth="2.5"
-              strokeLinejoin="round"
-            />
-            <path d="M 56 64 L 50 32 L 79 48 Z" fill="#F9B8C4" />
-          </g>
-
-          {/* Right Ear */}
-          <g
-            style={{
-              transformOrigin: '156px 56px',
-              transform: isError
-                ? 'rotate(24deg) translateY(6px)'
-                : isHappy
-                ? 'rotate(-6deg)'
-                : 'rotate(0deg)',
-              transition: 'transform 260ms ease',
-            }}
-          >
-            <path
-              d="M 168 72 L 178 22 L 132 45 Z"
-              fill="#F4BA7E"
-              stroke="#6B1420"
-              strokeWidth="2.5"
-              strokeLinejoin="round"
-            />
-            <path d="M 164 64 L 170 32 L 141 48 Z" fill="#F9B8C4" />
-          </g>
-
-          {/* Head */}
+          {/* Ground shadow — shrinks & expands in sync when cat jumps */}
           <ellipse
             cx="110"
-            cy="84"
-            rx="60"
-            ry="50"
-            fill="#F6C38A"
-            stroke="#6B1420"
-            strokeWidth="2.5"
+            cy="170"
+            rx="68"
+            ry="10"
+            fill="#6B1420"
+            opacity="0.14"
+            className={isHappyJump ? 'cat-shadow-jump' : ''}
+            style={{ transformOrigin: '110px 170px' }}
           />
 
-          {/* Forehead tabby stripes */}
-          <path
-            d="M 97 38 Q 100 50 98 56 M 110 35 Q 110 49 110 58 M 123 38 Q 120 50 122 56"
-            stroke="#C97D3D"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            fill="none"
-          />
+          {/* Main animated cat body group (jumps joyfully on Change Password / Happy!) */}
+          <g className={isHappyJump ? 'cat-body-jump' : ''} style={{ transformOrigin: '110px 155px' }}>
+            {/* Happy Sparkles floating above when jumping in Change Password */}
+            {isHappyJump && (
+              <g className="cat-sparkles">
+                <path
+                  d="M 32 42 L 35 34 L 38 42 L 46 45 L 38 48 L 35 56 L 32 48 L 24 45 Z"
+                  fill="#F59E0B"
+                />
+                <path
+                  d="M 184 36 L 186.5 29 L 189 36 L 196 38.5 L 189 41 L 186.5 48 L 184 41 L 177 38.5 Z"
+                  fill="#F59E0B"
+                />
+                <circle cx="48" cy="24" r="3" fill="#F472B6" />
+                <circle cx="172" cy="22" r="2.8" fill="#10B981" />
+              </g>
+            )}
 
-          {/* Cream muzzle */}
-          <ellipse cx="110" cy="103" rx="28" ry="18" fill="#FFF7EB" />
+            {/* Animated Tail (always gently moving; swings widely when sad/forgot; wags rapidly when happy/jumping) */}
+            <g className={tailAnimClass} style={{ transformOrigin: '162px 144px' }}>
+              <path
+                d={
+                  isHappyJump
+                    ? 'M 160 144 Q 208 118 194 78'
+                    : isSad
+                    ? 'M 160 146 Q 204 156 200 120'
+                    : 'M 160 144 Q 202 132 192 98'
+                }
+                fill="none"
+                stroke="#6B1420"
+                strokeWidth="15"
+                strokeLinecap="round"
+                style={{ transition: 'd 300ms ease' }}
+              />
+              <path
+                d={
+                  isHappyJump
+                    ? 'M 160 144 Q 208 118 194 78'
+                    : isSad
+                    ? 'M 160 146 Q 204 156 200 120'
+                    : 'M 160 144 Q 202 132 192 98'
+                }
+                fill="none"
+                stroke="#E9A96B"
+                strokeWidth="11"
+                strokeLinecap="round"
+                style={{ transition: 'd 300ms ease' }}
+              />
+              <path
+                d={
+                  isHappyJump
+                    ? 'M 160 144 Q 208 118 194 78'
+                    : isSad
+                    ? 'M 160 146 Q 204 156 200 120'
+                    : 'M 160 144 Q 202 132 192 98'
+                }
+                fill="none"
+                stroke="#FFF4E4"
+                strokeWidth="4"
+                strokeDasharray="6 10"
+                strokeLinecap="round"
+              />
+            </g>
 
-          {/* Cheeks blush */}
-          <ellipse
-            cx="68"
-            cy="98"
-            rx="10"
-            ry="6"
-            fill="#F472B6"
-            opacity={isHappy ? 0.52 : 0.28}
-            style={{ transition: 'opacity 250ms ease' }}
-          />
-          <ellipse
-            cx="152"
-            cy="98"
-            rx="10"
-            ry="6"
-            fill="#F472B6"
-            opacity={isHappy ? 0.52 : 0.28}
-            style={{ transition: 'opacity 250ms ease' }}
-          />
+            {/* Cat shoulders / body */}
+            <path
+              d="M 54 166 C 54 128, 75 114, 110 114 C 145 114, 166 128, 166 166 Z"
+              fill="#F4BA7E"
+              stroke="#6B1420"
+              strokeWidth="2.5"
+            />
+            {/* Cream chest fluff */}
+            <ellipse cx="110" cy="148" rx="28" ry="18" fill="#FFF7EB" />
 
-          {/* Whiskers */}
-          <g stroke="#6B1420" strokeWidth="1.8" strokeLinecap="round" opacity="0.65">
-            <line x1="36" y1="92" x2="62" y2="96" />
-            <line x1="34" y1="103" x2="61" y2="103" />
-            <line x1="39" y1="113" x2="63" y2="109" />
-            <line x1="184" y1="92" x2="158" y2="96" />
-            <line x1="186" y1="103" x2="159" y2="103" />
-            <line x1="181" y1="113" x2="157" y2="109" />
-          </g>
+            {/* BNHS Maroon Academic Bowtie */}
+            <g transform="translate(110, 130)">
+              <polygon points="0,0 -18,-9 -18,9" fill="#6B1420" />
+              <polygon points="0,0 18,-9 18,9" fill="#6B1420" />
+              <circle cx="0" cy="0" r="5" fill="#F59E0B" stroke="#6B1420" strokeWidth="1.5" />
+            </g>
 
-          {/* Eyes */}
-          {isHappy ? (
-            /* Happy squinting eyes ^ ^ */
+            {/* Left Ear */}
             <g
-              fill="none"
-              stroke="#3B1A1E"
+              style={{
+                transformOrigin: '64px 58px',
+                transform: isError
+                  ? 'rotate(-24deg) translateY(6px)'
+                  : isSad
+                  ? 'rotate(-16deg) translateY(4px)'
+                  : isHappyJump
+                  ? 'rotate(8deg) translateY(-2px)'
+                  : 'rotate(0deg)',
+                transition: 'transform 280ms ease',
+              }}
+            >
+              <path
+                d="M 52 74 L 42 24 L 88 47 Z"
+                fill="#F4BA7E"
+                stroke="#6B1420"
+                strokeWidth="2.5"
+                strokeLinejoin="round"
+              />
+              <path d="M 56 66 L 50 34 L 79 50 Z" fill="#F9B8C4" />
+            </g>
+
+            {/* Right Ear */}
+            <g
+              style={{
+                transformOrigin: '156px 58px',
+                transform: isError
+                  ? 'rotate(24deg) translateY(6px)'
+                  : isSad
+                  ? 'rotate(16deg) translateY(4px)'
+                  : isHappyJump
+                  ? 'rotate(-8deg) translateY(-2px)'
+                  : 'rotate(0deg)',
+                transition: 'transform 280ms ease',
+              }}
+            >
+              <path
+                d="M 168 74 L 178 24 L 132 47 Z"
+                fill="#F4BA7E"
+                stroke="#6B1420"
+                strokeWidth="2.5"
+                strokeLinejoin="round"
+              />
+              <path d="M 164 66 L 170 34 L 141 50 Z" fill="#F9B8C4" />
+            </g>
+
+            {/* Head */}
+            <ellipse
+              cx="110"
+              cy="86"
+              rx="60"
+              ry="50"
+              fill="#F6C38A"
+              stroke="#6B1420"
+              strokeWidth="2.5"
+            />
+
+            {/* Forehead tabby stripes */}
+            <path
+              d="M 97 40 Q 100 52 98 58 M 110 37 Q 110 51 110 60 M 123 40 Q 120 52 122 58"
+              stroke="#C97D3D"
               strokeWidth="3.5"
               strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M 75 82 Q 86 70 97 82" />
-              <path d="M 123 82 Q 134 70 145 82" />
-            </g>
-          ) : isError ? (
-            /* Worried X / >< eyes */
-            <g
               fill="none"
-              stroke="#6B1420"
-              strokeWidth="3.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M 78 74 L 93 83 L 78 90" />
-              <path d="M 142 74 L 127 83 L 142 90" />
-            </g>
-          ) : (
-            /* Open expressive eyes tracking cursor */
-            <g>
-              {/* Left Eye */}
-              <circle cx="86" cy="80" r="13.5" fill="#FFFFFF" stroke="#6B1420" strokeWidth="2" />
-              <g
-                style={{
-                  transform: `translate(${pupilX}px, ${pupilY}px)`,
-                  transition: 'transform 140ms ease-out',
-                }}
-              >
-                <circle cx="86" cy="80" r="7.5" fill="#2A1215" />
-                <circle cx="83" cy="76.5" r="2.6" fill="#FFFFFF" />
-                <circle cx="89" cy="83" r="1.2" fill="#FFFFFF" />
-              </g>
-
-              {/* Right Eye */}
-              <circle cx="134" cy="80" r="13.5" fill="#FFFFFF" stroke="#6B1420" strokeWidth="2" />
-              <g
-                style={{
-                  transform: `translate(${pupilX}px, ${pupilY}px)`,
-                  transition: 'transform 140ms ease-out',
-                }}
-              >
-                <circle cx="134" cy="80" r="7.5" fill="#2A1215" />
-                <circle cx="131" cy="76.5" r="2.6" fill="#FFFFFF" />
-                <circle cx="137" cy="83" r="1.2" fill="#FFFFFF" />
-              </g>
-            </g>
-          )}
-
-          {/* Cute pink triangle nose */}
-          <polygon points="104,95 116,95 110,102" fill="#E87A90" stroke="#6B1420" strokeWidth="1.2" />
-
-          {/* Mouth */}
-          {isError ? (
-            <path
-              d="M 101 112 Q 110 105 119 112"
-              fill="none"
-              stroke="#6B1420"
-              strokeWidth="2.3"
-              strokeLinecap="round"
             />
-          ) : isHappy ? (
-            <g>
+
+            {/* Cream muzzle */}
+            <ellipse cx="110" cy="105" rx="28" ry="18" fill="#FFF7EB" />
+
+            {/* Cheeks blush */}
+            <ellipse
+              cx="68"
+              cy="100"
+              rx="10.5"
+              ry="6.5"
+              fill="#F472B6"
+              opacity={isHappyJump ? 0.6 : isSad ? 0.18 : 0.3}
+              style={{ transition: 'opacity 250ms ease' }}
+            />
+            <ellipse
+              cx="152"
+              cy="100"
+              rx="10.5"
+              ry="6.5"
+              fill="#F472B6"
+              opacity={isHappyJump ? 0.6 : isSad ? 0.18 : 0.3}
+              style={{ transition: 'opacity 250ms ease' }}
+            />
+
+            {/* Whiskers */}
+            <g stroke="#6B1420" strokeWidth="1.8" strokeLinecap="round" opacity="0.65">
+              <line x1="36" y1="94" x2="62" y2="98" />
+              <line x1="34" y1="105" x2="61" y2="105" />
+              <line x1="39" y1="115" x2="63" y2="111" />
+              <line x1="184" y1="94" x2="158" y2="98" />
+              <line x1="186" y1="105" x2="159" y2="105" />
+              <line x1="181" y1="115" x2="157" y2="111" />
+            </g>
+
+            {/* ==================== EXPRESSIVE EYES ==================== */}
+            {isHappyJump ? (
+              /* Happy squinting eyes ^ ^ (Change Password & Success!) */
+              <g
+                fill="none"
+                stroke="#3B1A1E"
+                strokeWidth="3.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M 73 85 Q 86 69 99 85" />
+                <path d="M 121 85 Q 134 69 147 85" />
+                {/* Cheerful tiny outer eye sparkle */}
+                <circle cx="71" cy="76" r="1.8" fill="#F59E0B" stroke="none" />
+                <circle cx="149" cy="76" r="1.8" fill="#F59E0B" stroke="none" />
+              </g>
+            ) : isPasswordClosed ? (
+              /* Closed Eyes while inputting password (clearly visible closed curved eyelids!) */
+              <g>
+                {/* Soft eyelid shade */}
+                <ellipse cx="86" cy="82" rx="13.5" ry="12" fill="#F3B87A" opacity="0.6" />
+                <ellipse cx="134" cy="82" rx="13.5" ry="12" fill="#F3B87A" opacity="0.6" />
+                <g
+                  fill="none"
+                  stroke="#3B1A1E"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  {/* Left closed eyelid arc */}
+                  <path d="M 73 81 Q 86 91 99 81" />
+                  <line x1="77" y1="86" x2="74" y2="90" strokeWidth="2.2" />
+                  <line x1="86" y1="88" x2="86" y2="92" strokeWidth="2.2" />
+                  <line x1="95" y1="86" x2="98" y2="90" strokeWidth="2.2" />
+                  {/* Right closed eyelid arc */}
+                  <path d="M 121 81 Q 134 91 147 81" />
+                  <line x1="125" y1="86" x2="122" y2="90" strokeWidth="2.2" />
+                  <line x1="134" y1="88" x2="134" y2="92" strokeWidth="2.2" />
+                  <line x1="143" y1="86" x2="146" y2="90" strokeWidth="2.2" />
+                </g>
+              </g>
+            ) : isError ? (
+              /* Worried >< eyes on invalid password */
+              <g
+                fill="none"
+                stroke="#6B1420"
+                strokeWidth="3.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M 78 76 L 93 85 L 78 92" />
+                <path d="M 142 76 L 127 85 L 142 92" />
+              </g>
+            ) : isSad ? (
+              /* Sad watery eyes with worried droopy eyebrows & glistening teardrops (Forgot Password!) */
+              <g>
+                {/* Worried sad eyebrows tilted upward toward center */}
+                <path
+                  d="M 72 68 Q 84 65 95 59"
+                  fill="none"
+                  stroke="#6B1420"
+                  strokeWidth="2.8"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M 148 68 Q 136 65 125 59"
+                  fill="none"
+                  stroke="#6B1420"
+                  strokeWidth="2.8"
+                  strokeLinecap="round"
+                />
+
+                {/* Left Sad Eye */}
+                <circle cx="86" cy="83" r="13.5" fill="#FFFFFF" stroke="#6B1420" strokeWidth="2" />
+                <g
+                  style={{
+                    transform: isSadTracking
+                      ? `translate(${pupilX * 0.7}px, 3px)`
+                      : 'translate(-1.5px, 3px)',
+                    transition: 'transform 200ms ease-out',
+                  }}
+                >
+                  <circle cx="86" cy="83" r="8" fill="#2A1215" />
+                  {/* Extra glossy teary highlights */}
+                  <circle cx="82.5" cy="79" r="3.2" fill="#FFFFFF" />
+                  <circle cx="89.5" cy="85.5" r="1.9" fill="#DBEAFE" />
+                  <circle cx="84.5" cy="88" r="1.3" fill="#93C5FD" />
+                </g>
+                {/* Animated falling teardrop on left eye */}
+                <path
+                  d="M 74 93 C 74 93 70 99 74 101 C 78 99 74 93 74 93 Z"
+                  fill="#60A5FA"
+                  className="cat-teardrop"
+                />
+
+                {/* Right Sad Eye */}
+                <circle cx="134" cy="83" r="13.5" fill="#FFFFFF" stroke="#6B1420" strokeWidth="2" />
+                <g
+                  style={{
+                    transform: isSadTracking
+                      ? `translate(${pupilX * 0.7}px, 3px)`
+                      : 'translate(1.5px, 3px)',
+                    transition: 'transform 200ms ease-out',
+                  }}
+                >
+                  <circle cx="134" cy="83" r="8" fill="#2A1215" />
+                  <circle cx="130.5" cy="79" r="3.2" fill="#FFFFFF" />
+                  <circle cx="137.5" cy="85.5" r="1.9" fill="#DBEAFE" />
+                  <circle cx="132.5" cy="88" r="1.3" fill="#93C5FD" />
+                </g>
+                {/* Watery shimmer under right eye */}
+                <ellipse cx="144" cy="94" rx="3" ry="1.8" fill="#93C5FD" opacity="0.85" />
+              </g>
+            ) : isPeeking ? (
+              /* Left eye closed, right eye playfully open & peeking */
+              <g>
+                <path
+                  d="M 73 82 Q 86 90 99 82"
+                  fill="none"
+                  stroke="#3B1A1E"
+                  strokeWidth="3.4"
+                  strokeLinecap="round"
+                />
+                <circle cx="134" cy="82" r="13.5" fill="#FFFFFF" stroke="#6B1420" strokeWidth="2" />
+                <g style={{ transform: 'translate(-2px, 2px)' }}>
+                  <circle cx="134" cy="82" r="7.5" fill="#2A1215" />
+                  <circle cx="131" cy="78.5" r="2.6" fill="#FFFFFF" />
+                  <circle cx="137" cy="85" r="1.2" fill="#FFFFFF" />
+                </g>
+              </g>
+            ) : (
+              /* Open expressive eyes: actively look around gently when idle, track typing cursor when typing, and blink naturally */
+              <g className="cat-eyes-blink" style={{ transformOrigin: '110px 82px' }}>
+                {/* Left Eye */}
+                <circle cx="86" cy="82" r="13.5" fill="#FFFFFF" stroke="#6B1420" strokeWidth="2" />
+                <g
+                  className={isIdle ? 'cat-pupils-idle' : ''}
+                  style={
+                    isIdle
+                      ? undefined
+                      : {
+                          transform: `translate(${pupilX}px, ${pupilY}px)`,
+                          transition: 'transform 140ms ease-out',
+                        }
+                  }
+                >
+                  <circle cx="86" cy="82" r="7.5" fill="#2A1215" />
+                  <circle cx="83" cy="78.5" r="2.6" fill="#FFFFFF" />
+                  <circle cx="89" cy="85" r="1.2" fill="#FFFFFF" />
+                </g>
+
+                {/* Right Eye */}
+                <circle cx="134" cy="82" r="13.5" fill="#FFFFFF" stroke="#6B1420" strokeWidth="2" />
+                <g
+                  className={isIdle ? 'cat-pupils-idle' : ''}
+                  style={
+                    isIdle
+                      ? undefined
+                      : {
+                          transform: `translate(${pupilX}px, ${pupilY}px)`,
+                          transition: 'transform 140ms ease-out',
+                        }
+                  }
+                >
+                  <circle cx="134" cy="82" r="7.5" fill="#2A1215" />
+                  <circle cx="131" cy="78.5" r="2.6" fill="#FFFFFF" />
+                  <circle cx="137" cy="85" r="1.2" fill="#FFFFFF" />
+                </g>
+              </g>
+            )}
+
+            {/* Cute pink triangle nose */}
+            <polygon points="104,97 116,97 110,104" fill="#E87A90" stroke="#6B1420" strokeWidth="1.2" />
+
+            {/* Mouth */}
+            {isError || isSad ? (
               <path
-                d="M 97 104 Q 103.5 112 110 104 Q 116.5 112 123 104"
+                d="M 101 114 Q 110 106 119 114"
                 fill="none"
                 stroke="#6B1420"
                 strokeWidth="2.4"
                 strokeLinecap="round"
               />
+            ) : isHappyJump ? (
+              <g>
+                <path
+                  d="M 96 106 Q 103 114 110 106 Q 117 114 124 106"
+                  fill="none"
+                  stroke="#6B1420"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M 104 110 Q 110 120 116 110"
+                  fill="#F472B6"
+                  stroke="#6B1420"
+                  strokeWidth="1.5"
+                />
+              </g>
+            ) : (
               <path
-                d="M 105 108 Q 110 117 115 108"
-                fill="#F472B6"
+                d="M 98 107 Q 104 113 110 106 Q 116 113 122 107"
+                fill="none"
                 stroke="#6B1420"
-                strokeWidth="1.5"
+                strokeWidth="2.3"
+                strokeLinecap="round"
               />
+            )}
+
+            {/* LEFT PAW: raises playfully on cheeks during password input (keeping closed eyes clearly visible!), cheers upward when jumping */}
+            <g
+              style={{
+                transform: isPasswordClosed
+                  ? 'translate(10px, -44px) rotate(18deg)'
+                  : isPeeking
+                  ? 'translate(22px, -66px) rotate(16deg)'
+                  : isHappyJump
+                  ? 'translate(-12px, -30px) rotate(-26deg)'
+                  : isSad
+                  ? 'translate(6px, -6px) rotate(8deg)'
+                  : 'translate(0px, 0px) rotate(0deg)',
+                transformOrigin: '64px 156px',
+                transition: 'transform 300ms cubic-bezier(0.34, 1.45, 0.64, 1)',
+              }}
+            >
+              <ellipse
+                cx="64"
+                cy="156"
+                rx="20"
+                ry="16"
+                fill="#FFF4E4"
+                stroke="#6B1420"
+                strokeWidth="2.4"
+              />
+              {/* Paw beans */}
+              <circle cx="56" cy="152" r="3.2" fill="#F9B8C4" />
+              <circle cx="64" cy="149" r="3.4" fill="#F9B8C4" />
+              <circle cx="72" cy="152" r="3.2" fill="#F9B8C4" />
+              <ellipse cx="64" cy="159" rx="6" ry="4" fill="#F9B8C4" />
             </g>
-          ) : (
-            <path
-              d="M 98 105 Q 104 111 110 104 Q 116 111 122 105"
-              fill="none"
-              stroke="#6B1420"
-              strokeWidth="2.3"
-              strokeLinecap="round"
-            />
-          )}
 
-          {/* LEFT PAW: rests on form ledge when idle, rises over left eye when covering/peeking */}
-          <g
-            style={{
-              transform: isCovering
-                ? 'translate(22px, -68px) rotate(16deg)'
-                : isPeeking
-                ? 'translate(22px, -68px) rotate(16deg)'
-                : 'translate(0px, 0px) rotate(0deg)',
-              transformOrigin: '64px 154px',
-              transition: 'transform 320ms cubic-bezier(0.34, 1.45, 0.64, 1)',
-            }}
-          >
-            <ellipse
-              cx="64"
-              cy="154"
-              rx="20"
-              ry="16"
-              fill="#FFF4E4"
-              stroke="#6B1420"
-              strokeWidth="2.4"
-            />
-            {/* Paw beans */}
-            <circle cx="56" cy="150" r="3.2" fill="#F9B8C4" />
-            <circle cx="64" cy="147" r="3.4" fill="#F9B8C4" />
-            <circle cx="72" cy="150" r="3.2" fill="#F9B8C4" />
-            <ellipse cx="64" cy="157" rx="6" ry="4" fill="#F9B8C4" />
-          </g>
-
-          {/* RIGHT PAW: covers right eye when covering, drops halfway when peeking */}
-          <g
-            style={{
-              transform: isCovering
-                ? 'translate(-22px, -68px) rotate(-16deg)'
-                : isPeeking
-                ? 'translate(-12px, -36px) rotate(-8deg)'
-                : 'translate(0px, 0px) rotate(0deg)',
-              transformOrigin: '156px 154px',
-              transition: 'transform 320ms cubic-bezier(0.34, 1.45, 0.64, 1)',
-            }}
-          >
-            <ellipse
-              cx="156"
-              cy="154"
-              rx="20"
-              ry="16"
-              fill="#FFF4E4"
-              stroke="#6B1420"
-              strokeWidth="2.4"
-            />
-            {/* Paw beans */}
-            <circle cx="148" cy="150" r="3.2" fill="#F9B8C4" />
-            <circle cx="156" cy="147" r="3.4" fill="#F9B8C4" />
-            <circle cx="164" cy="150" r="3.2" fill="#F9B8C4" />
-            <ellipse cx="156" cy="157" rx="6" ry="4" fill="#F9B8C4" />
+            {/* RIGHT PAW */}
+            <g
+              style={{
+                transform: isPasswordClosed
+                  ? 'translate(-10px, -44px) rotate(-18deg)'
+                  : isPeeking
+                  ? 'translate(-10px, -28px) rotate(-8deg)'
+                  : isHappyJump
+                  ? 'translate(12px, -30px) rotate(26deg)'
+                  : isSad
+                  ? 'translate(-6px, -6px) rotate(-8deg)'
+                  : 'translate(0px, 0px) rotate(0deg)',
+                transformOrigin: '156px 156px',
+                transition: 'transform 300ms cubic-bezier(0.34, 1.45, 0.64, 1)',
+              }}
+            >
+              <ellipse
+                cx="156"
+                cy="156"
+                rx="20"
+                ry="16"
+                fill="#FFF4E4"
+                stroke="#6B1420"
+                strokeWidth="2.4"
+              />
+              {/* Paw beans */}
+              <circle cx="148" cy="152" r="3.2" fill="#F9B8C4" />
+              <circle cx="156" cy="149" r="3.4" fill="#F9B8C4" />
+              <circle cx="164" cy="152" r="3.2" fill="#F9B8C4" />
+              <ellipse cx="156" cy="159" rx="6" ry="4" fill="#F9B8C4" />
+            </g>
           </g>
         </svg>
       </div>
@@ -460,9 +660,16 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
   // Animation & Feedback states
   const [catMood, setCatMood] = useState<CatMood>('idle');
   const [gazeOffset, setGazeOffset] = useState<number>(0);
+  const [isSadTracking, setIsSadTracking] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [successMsg, setSuccessMsg] = useState<string>('');
+
+  const getDefaultMoodForView = (mode: LoginModalViewMode): CatMood => {
+    if (mode === 'forgot_password') return 'sad_forgot';
+    if (mode === 'change_password') return 'happy_jump';
+    return 'idle';
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -477,8 +684,9 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
     setErrorMsg('');
     setSuccessMsg('');
     setResetResult(null);
-    setCatMood('idle');
+    setCatMood(getDefaultMoodForView(initialView));
     setGazeOffset(0);
+    setIsSadTracking(false);
     setShowPassword(false);
     setShowChangePwds(false);
   }, [isOpen, initialView, currentSession]);
@@ -487,26 +695,54 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
 
   const activeRoleDef = getRoleDefinition(selectedRole);
 
+  const switchViewMode = (nextMode: LoginModalViewMode) => {
+    setViewMode(nextMode);
+    setErrorMsg('');
+    setSuccessMsg('');
+    if (nextMode === 'forgot_password') {
+      setResetResult(null);
+    }
+    setIsSadTracking(false);
+    setCatMood(getDefaultMoodForView(nextMode));
+  };
+
   const updateGazeFromText = (val: string) => {
     const ratio = Math.min(val.length / 26, 1);
     setGazeOffset(ratio * 2 - 1);
-    setCatMood('tracking');
+    if (viewMode === 'forgot_password') {
+      setIsSadTracking(true);
+      setCatMood('sad_forgot');
+    } else if (viewMode === 'change_password') {
+      setCatMood('happy_jump');
+    } else {
+      setCatMood('tracking');
+    }
+  };
+
+  const handleTextFieldBlur = () => {
+    setIsSadTracking(false);
+    setCatMood(getDefaultMoodForView(viewMode));
   };
 
   const handlePasswordFocus = (isVisible: boolean) => {
-    setCatMood(isVisible ? 'peeking' : 'covering');
+    setCatMood(isVisible ? 'peeking' : 'password_closed');
+  };
+
+  const handlePasswordBlur = () => {
+    // Done inputting password -> eyes open immediately (or return to happy_jump in Change Password!)
+    setCatMood(getDefaultMoodForView(viewMode));
   };
 
   const handleTogglePasswordVisibility = () => {
     const next = !showPassword;
     setShowPassword(next);
-    setCatMood(next ? 'peeking' : 'covering');
+    setCatMood(next ? 'peeking' : 'password_closed');
   };
 
   const handleToggleChangePwdVisibility = () => {
     const next = !showChangePwds;
     setShowChangePwds(next);
-    setCatMood(next ? 'peeking' : 'covering');
+    setCatMood(next ? 'peeking' : 'password_closed');
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -539,7 +775,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
         return;
       }
 
-      setCatMood('happy');
+      setCatMood('happy_jump');
       setSuccessMsg(
         check.mustChangePassword
           ? 'Signed in with temporary password! You can update your password anytime from Change Password.'
@@ -563,7 +799,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
       setTimeout(() => {
         onLoginSuccess(session);
         onClose();
-      }, 650);
+      }, 750);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Unable to verify credentials.');
       setCatMood('error');
@@ -604,7 +840,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
         setCatMood('error');
         return;
       }
-      setCatMood('happy');
+      setCatMood('happy_jump');
       const msg = `Password updated successfully for ${targetRole} (${targetEmail}).`;
       setSuccessMsg(msg);
       if (onPasswordChanged) onPasswordChanged(msg);
@@ -613,7 +849,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
       setConfirmNewPwd('');
       setTimeout(() => {
         onClose();
-      }, 950);
+      }, 1250);
     } finally {
       setSubmitting(false);
     }
@@ -627,7 +863,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       setErrorMsg('Please enter your registered email address so we can send your generated password.');
-      setCatMood('error');
+      setCatMood('sad_forgot');
       return;
     }
 
@@ -635,7 +871,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
     try {
       const result = await resetForgotPortalPassword(selectedRole, cleanEmail);
       setResetResult(result);
-      setCatMood('happy');
+      setCatMood('sad_forgot');
       setSuccessMsg(
         `A secure temporary password has been generated and dispatched for ${cleanEmail}.`
       );
@@ -648,7 +884,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
       }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Unable to reset password.');
-      setCatMood('error');
+      setCatMood('sad_forgot');
     } finally {
       setSubmitting(false);
     }
@@ -668,7 +904,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
     setSubmitting(true);
     try {
       await onGoogleSignIn();
-      setCatMood('happy');
+      setCatMood('happy_jump');
       onClose();
     } catch (err) {
       setErrorMsg(
@@ -688,10 +924,86 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
       aria-labelledby="bnhs-cat-login-title"
     >
       <style>{`
-        @keyframes wiggle {
+        @keyframes catWiggle {
           0%, 100% { transform: translateX(0); }
           25% { transform: translateX(-7px) rotate(-3deg); }
           75% { transform: translateX(7px) rotate(3deg); }
+        }
+        @keyframes catTailWagGentle {
+          0%, 100% { transform: rotate(-9deg); }
+          50% { transform: rotate(12deg); }
+        }
+        @keyframes catTailSwingSad {
+          0%, 100% { transform: rotate(-22deg); }
+          50% { transform: rotate(22deg); }
+        }
+        @keyframes catTailWagHappy {
+          0%, 100% { transform: rotate(-16deg); }
+          50% { transform: rotate(18deg); }
+        }
+        @keyframes catPupilsIdle {
+          0%, 100% { transform: translate(0px, 0.5px); }
+          20% { transform: translate(-4px, 0px); }
+          45% { transform: translate(4px, 0.5px); }
+          70% { transform: translate(2px, -1.5px); }
+          88% { transform: translate(-2px, 1px); }
+        }
+        @keyframes catEyesBlink {
+          0%, 44%, 48%, 92%, 96%, 100% { transform: scaleY(1); }
+          46%, 94% { transform: scaleY(0.08); }
+        }
+        @keyframes catBodyJump {
+          0%, 100% { transform: translateY(0px) scale(1, 1); }
+          15% { transform: translateY(4px) scale(1.04, 0.94); }
+          45% { transform: translateY(-18px) scale(0.97, 1.05); }
+          75% { transform: translateY(2px) scale(1.03, 0.96); }
+        }
+        @keyframes catShadowJump {
+          0%, 100% { transform: scaleX(1); opacity: 0.14; }
+          15% { transform: scaleX(1.06); opacity: 0.18; }
+          45% { transform: scaleX(0.68); opacity: 0.08; }
+          75% { transform: scaleX(1.04); opacity: 0.16; }
+        }
+        @keyframes catTeardropFall {
+          0%, 100% { transform: translateY(0px); opacity: 0.9; }
+          60% { transform: translateY(7px); opacity: 0.95; }
+          85% { transform: translateY(11px); opacity: 0; }
+          86% { transform: translateY(0px); opacity: 0; }
+        }
+        @keyframes catSparklesPulse {
+          0%, 100% { opacity: 0.95; transform: scale(1); }
+          50% { opacity: 0.45; transform: scale(0.88); }
+        }
+        .cat-wiggle-error {
+          animation: catWiggle 0.38s ease-in-out 2;
+        }
+        .cat-tail-wag-gentle {
+          animation: catTailWagGentle 2.5s ease-in-out infinite;
+        }
+        .cat-tail-swing-sad {
+          animation: catTailSwingSad 1.35s ease-in-out infinite;
+        }
+        .cat-tail-wag-happy {
+          animation: catTailWagHappy 0.65s ease-in-out infinite;
+        }
+        .cat-pupils-idle {
+          animation: catPupilsIdle 4.8s ease-in-out infinite;
+        }
+        .cat-eyes-blink {
+          animation: catEyesBlink 4.6s ease-in-out infinite;
+        }
+        .cat-body-jump {
+          animation: catBodyJump 0.85s ease-in-out infinite;
+        }
+        .cat-shadow-jump {
+          animation: catShadowJump 0.85s ease-in-out infinite;
+        }
+        .cat-teardrop {
+          animation: catTeardropFall 1.9s ease-in infinite;
+        }
+        .cat-sparkles {
+          animation: catSparklesPulse 0.9s ease-in-out infinite;
+          transform-origin: 110px 40px;
         }
       `}</style>
 
@@ -732,7 +1044,11 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
         <div className="max-h-[84vh] overflow-y-auto bg-[#FAF9F5]">
           {/* Interactive Cute Cat Stage */}
           <div className="pt-4 pb-1 px-4 flex flex-col items-center justify-center bg-gradient-to-b from-rose-50/80 via-[#FAF9F5] to-white border-b border-zinc-200">
-            <CuteCatMascot mood={catMood} gazeOffset={gazeOffset} />
+            <CuteCatMascot
+              mood={catMood}
+              gazeOffset={gazeOffset}
+              isSadTracking={isSadTracking}
+            />
           </div>
 
           {/* Mode Tabs Bar */}
@@ -740,12 +1056,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
-                onClick={() => {
-                  setViewMode('login');
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                  setCatMood('idle');
-                }}
+                onClick={() => switchViewMode('login')}
                 className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
                   viewMode === 'login'
                     ? 'bg-[#6B1420] text-white'
@@ -756,12 +1067,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setViewMode('change_password');
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                  setCatMood('idle');
-                }}
+                onClick={() => switchViewMode('change_password')}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${
                   viewMode === 'change_password'
                     ? 'bg-[#6B1420] text-white'
@@ -773,13 +1079,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setViewMode('forgot_password');
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                  setResetResult(null);
-                  setCatMood('idle');
-                }}
+                onClick={() => switchViewMode('forgot_password')}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${
                   viewMode === 'forgot_password'
                     ? 'bg-[#6B1420] text-white'
@@ -883,6 +1183,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                       type="text"
                       value={fullName}
                       onFocus={() => updateGazeFromText(fullName)}
+                      onBlur={handleTextFieldBlur}
                       onChange={(e) => {
                         setFullName(e.target.value);
                         updateGazeFromText(e.target.value);
@@ -902,6 +1203,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                         required
                         value={email}
                         onFocus={() => updateGazeFromText(email)}
+                        onBlur={handleTextFieldBlur}
                         onChange={(e) => {
                           setEmail(e.target.value);
                           updateGazeFromText(e.target.value);
@@ -921,12 +1223,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                     </label>
                     <button
                       type="button"
-                      onClick={() => {
-                        setViewMode('forgot_password');
-                        setErrorMsg('');
-                        setResetResult(null);
-                        setCatMood('idle');
-                      }}
+                      onClick={() => switchViewMode('forgot_password')}
                       className="text-[11px] font-semibold text-[#6B1420] hover:underline"
                     >
                       Forgot Password?
@@ -939,7 +1236,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                       required
                       value={password}
                       onFocus={() => handlePasswordFocus(showPassword)}
-                      onBlur={() => setCatMood('idle')}
+                      onBlur={handlePasswordBlur}
                       onChange={(e) => {
                         setPassword(e.target.value);
                         handlePasswordFocus(showPassword);
@@ -1072,6 +1369,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                       value={currentSession?.email || email}
                       disabled={Boolean(currentSession?.email)}
                       onFocus={() => updateGazeFromText(email)}
+                      onBlur={handleTextFieldBlur}
                       onChange={(e) => {
                         setEmail(e.target.value);
                         updateGazeFromText(e.target.value);
@@ -1102,8 +1400,11 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                     required
                     value={currentPwd}
                     onFocus={() => handlePasswordFocus(showChangePwds)}
-                    onBlur={() => setCatMood('idle')}
-                    onChange={(e) => setCurrentPwd(e.target.value)}
+                    onBlur={handlePasswordBlur}
+                    onChange={(e) => {
+                      setCurrentPwd(e.target.value);
+                      handlePasswordFocus(showChangePwds);
+                    }}
                     placeholder="Enter current password"
                     className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white focus:outline-none focus:border-[#6B1420]"
                   />
@@ -1120,8 +1421,11 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                       minLength={6}
                       value={newPwd}
                       onFocus={() => handlePasswordFocus(showChangePwds)}
-                      onBlur={() => setCatMood('idle')}
-                      onChange={(e) => setNewPwd(e.target.value)}
+                      onBlur={handlePasswordBlur}
+                      onChange={(e) => {
+                        setNewPwd(e.target.value);
+                        handlePasswordFocus(showChangePwds);
+                      }}
                       placeholder="Enter new strong password"
                       className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white focus:outline-none focus:border-[#6B1420]"
                     />
@@ -1136,8 +1440,11 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                       minLength={6}
                       value={confirmNewPwd}
                       onFocus={() => handlePasswordFocus(showChangePwds)}
-                      onBlur={() => setCatMood('idle')}
-                      onChange={(e) => setConfirmNewPwd(e.target.value)}
+                      onBlur={handlePasswordBlur}
+                      onChange={(e) => {
+                        setConfirmNewPwd(e.target.value);
+                        handlePasswordFocus(showChangePwds);
+                      }}
                       placeholder="Re-enter new password"
                       className="w-full px-3 py-2 text-xs border border-zinc-300 bg-white focus:outline-none focus:border-[#6B1420]"
                     />
@@ -1147,7 +1454,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                 <div className="flex items-center justify-between pt-2">
                   <button
                     type="button"
-                    onClick={() => setViewMode('login')}
+                    onClick={() => switchViewMode('login')}
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
@@ -1199,6 +1506,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                         required
                         value={email}
                         onFocus={() => updateGazeFromText(email)}
+                        onBlur={handleTextFieldBlur}
                         onChange={(e) => {
                           setEmail(e.target.value);
                           updateGazeFromText(e.target.value);
@@ -1212,7 +1520,7 @@ export const BnhsPortalLoginModal: React.FC<BnhsPortalLoginModalProps> = ({
                   <div className="flex items-center justify-between gap-2">
                     <button
                       type="button"
-                      onClick={() => setViewMode('login')}
+                      onClick={() => switchViewMode('login')}
                       className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900"
                     >
                       <ArrowLeft className="w-3.5 h-3.5" />

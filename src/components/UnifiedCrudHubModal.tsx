@@ -266,11 +266,20 @@ export const UnifiedCrudHubModal: React.FC<UnifiedCrudHubModalProps> = ({
         return;
       }
       const reader = new FileReader();
-      reader.onload = () => {
-        setDraftLogoUrl(String(reader.result || ''));
+      reader.onload = async () => {
+        const dataUrl = String(reader.result || '');
+        setDraftLogoUrl(dataUrl);
         setDraftLogoFileName(file.name);
         setDraftLogoMime('image/gif');
-        setFeedback(`Animated GIF "${file.name}" loaded with full motion preserved. Click "Save Portal Logo" to publish.`);
+        setSavingLogo(true);
+        try {
+          await onSavePortalLogo(dataUrl, file.name, 'image/gif');
+          setFeedback(`Animated GIF "${file.name}" auto-saved & synced with full motion preserved!`);
+        } catch (err) {
+          setErrorMsg(err instanceof Error ? err.message : 'Unable to auto-save animated GIF logo.');
+        } finally {
+          setSavingLogo(false);
+        }
       };
       reader.readAsDataURL(file);
       return;
@@ -279,18 +288,28 @@ export const UnifiedCrudHubModal: React.FC<UnifiedCrudHubModalProps> = ({
     // Standard static image (PNG/JPG/WEBP/SVG)
     if (file.size <= 400 * 1024) {
       const reader = new FileReader();
-      reader.onload = () => {
-        setDraftLogoUrl(String(reader.result || ''));
+      reader.onload = async () => {
+        const dataUrl = String(reader.result || '');
+        const mime = file.type || 'image/png';
+        setDraftLogoUrl(dataUrl);
         setDraftLogoFileName(file.name);
-        setDraftLogoMime(file.type || 'image/png');
-        setFeedback(`Logo image "${file.name}" ready. Click "Save Portal Logo" to apply across the portal.`);
+        setDraftLogoMime(mime);
+        setSavingLogo(true);
+        try {
+          await onSavePortalLogo(dataUrl, file.name, mime);
+          setFeedback(`Logo image "${file.name}" auto-saved & synced across the portal!`);
+        } catch (err) {
+          setErrorMsg(err instanceof Error ? err.message : 'Unable to auto-save logo image.');
+        } finally {
+          setSavingLogo(false);
+        }
       };
       reader.readAsDataURL(file);
     } else {
       const reader = new FileReader();
       reader.onload = () => {
         const img = new Image();
-        img.onload = () => {
+        img.onload = async () => {
           const canvas = document.createElement('canvas');
           const size = Math.min(360, Math.max(img.width, img.height));
           canvas.width = size;
@@ -298,10 +317,19 @@ export const UnifiedCrudHubModal: React.FC<UnifiedCrudHubModalProps> = ({
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, size, size);
-            setDraftLogoUrl(canvas.toDataURL('image/png'));
+            const dataUrl = canvas.toDataURL('image/png');
+            setDraftLogoUrl(dataUrl);
             setDraftLogoFileName(file.name);
             setDraftLogoMime('image/png');
-            setFeedback(`Logo image "${file.name}" optimized and ready to save.`);
+            setSavingLogo(true);
+            try {
+              await onSavePortalLogo(dataUrl, file.name, 'image/png');
+              setFeedback(`Logo image "${file.name}" optimized, auto-saved & synced across the portal!`);
+            } catch (err) {
+              setErrorMsg(err instanceof Error ? err.message : 'Unable to auto-save optimized logo.');
+            } finally {
+              setSavingLogo(false);
+            }
           }
         };
         img.src = String(reader.result || '');
@@ -310,15 +338,25 @@ export const UnifiedCrudHubModal: React.FC<UnifiedCrudHubModalProps> = ({
     }
   };
 
-  const handleApplyLogoLink = () => {
+  const handleApplyLogoLink = async () => {
     const raw = draftLogoLinkInput.trim();
     if (!raw) return;
     const resolved = resolveGoogleDriveImageUrl(raw);
+    const fname = raw.toLowerCase().includes('.gif') ? 'external_logo.gif' : 'external_logo_url';
+    const mime = raw.toLowerCase().includes('.gif') ? 'image/gif' : 'image/url';
     setDraftLogoUrl(resolved);
-    setDraftLogoFileName(raw.toLowerCase().includes('.gif') ? 'external_logo.gif' : 'external_logo_url');
-    setDraftLogoMime(raw.toLowerCase().includes('.gif') ? 'image/gif' : 'image/url');
+    setDraftLogoFileName(fname);
+    setDraftLogoMime(mime);
     setErrorMsg('');
-    setFeedback('External / Google Drive logo URL previewed. Click "Save Portal Logo" to apply everywhere.');
+    setSavingLogo(true);
+    try {
+      await onSavePortalLogo(resolved, fname, mime);
+      setFeedback('External / Google Drive logo URL auto-saved & applied everywhere!');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Unable to auto-save external logo URL.');
+    } finally {
+      setSavingLogo(false);
+    }
   };
 
   const handleCommitPortalLogo = async () => {

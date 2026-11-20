@@ -184,6 +184,10 @@ export default function App() {
   const hasMountedRef = useRef<boolean>(false);
   const hasBootSyncedRef = useRef<boolean>(false);
   const syncTimerRef = useRef<number | null>(null);
+  const cloudAutoSyncTimerRef = useRef<number | null>(null);
+  const cloudSyncInFlightRef = useRef<boolean>(false);
+  const isApplyingStorageSyncRef = useRef<boolean>(false);
+  const autoSyncHandlerRef = useRef<(() => Promise<void>) | null>(null);
 
   // Local state mirrors so edits, deletes, comments, overview changes, and Notify Me work seamlessly
   const [localResearches, setLocalResearches] = useState<ResearchRecord[]>(() => {
@@ -331,15 +335,18 @@ export default function App() {
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
   const [currentYear, setCurrentYear] = useState<number>(() => new Date().getFullYear());
   const [cloudSyncState, setCloudSyncState] = useState<'synced' | 'syncing' | 'auto_saved'>('synced');
+  const [autoSyncDirtyVersion, setAutoSyncDirtyVersion] = useState<number>(0);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>(() =>
     new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   );
 
   const markAutoSynced = () => {
+    if (isApplyingStorageSyncRef.current) return;
     if (syncTimerRef.current) {
       window.clearTimeout(syncTimerRef.current);
     }
     setCloudSyncState('syncing');
+    setAutoSyncDirtyVersion((v) => v + 1);
     const timeLabel = new Date().toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
@@ -347,9 +354,9 @@ export default function App() {
     });
     syncTimerRef.current = window.setTimeout(() => {
       setLastSyncedTime(timeLabel);
-      setCloudSyncState('synced');
+      setCloudSyncState('auto_saved');
       syncTimerRef.current = null;
-    }, 250);
+    }, 260);
   };
 
   // Persist local state mirrors & update Cloud Synced timestamp automatically on any change after mount
@@ -473,10 +480,161 @@ export default function App() {
   }, [deletedProfileIds]);
 
   useEffect(() => {
+    if (!hasMountedRef.current) return;
+    try {
+      localStorage.setItem(LOCAL_PUBLISHED_JOURNALS_KEY, JSON.stringify(localJournals));
+      markAutoSynced();
+    } catch {
+      // ignore
+    }
+  }, [localJournals]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) return;
+    try {
+      localStorage.setItem(LOCAL_DELETED_JOURNAL_IDS_KEY, JSON.stringify(deletedJournalIds));
+      markAutoSynced();
+    } catch {
+      // ignore
+    }
+  }, [deletedJournalIds]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) return;
+    try {
+      localStorage.setItem(LOCAL_PORTAL_LOGO_KEY, portalLogoUrl);
+      markAutoSynced();
+    } catch {
+      // ignore
+    }
+  }, [portalLogoUrl]);
+
+  // Automatic debounced Cloud Sync whenever any change occurs in the preview
+  useEffect(() => {
+    if (!hasMountedRef.current || autoSyncDirtyVersion === 0) return;
+    if (cloudAutoSyncTimerRef.current) {
+      window.clearTimeout(cloudAutoSyncTimerRef.current);
+    }
+    cloudAutoSyncTimerRef.current = window.setTimeout(() => {
+      cloudAutoSyncTimerRef.current = null;
+      if (autoSyncHandlerRef.current && !cloudSyncInFlightRef.current) {
+        void autoSyncHandlerRef.current();
+      }
+    }, 900);
+    return () => {
+      if (cloudAutoSyncTimerRef.current) {
+        window.clearTimeout(cloudAutoSyncTimerRef.current);
+      }
+    };
+  }, [autoSyncDirtyVersion]);
+
+  // Cross-tab Auto-Sync listener: automatically reflect preview edits across open windows/tabs
+  useEffect(() => {
+    const handleStorageSync = (e: StorageEvent) => {
+      if (!e.key || e.newValue === null) return;
+      isApplyingStorageSyncRef.current = true;
+      try {
+        if (e.key === LOCAL_RESEARCH_OVERRIDES_KEY) {
+          setLocalResearches(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_DELETED_RESEARCH_IDS_KEY) {
+          setDeletedResearchIds(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_COMMENTS_KEY) {
+          setLocalComments(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_SUBSCRIPTIONS_KEY) {
+          setLocalSubscriptions(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_OVERVIEW_ITEMS_KEY) {
+          setLocalOverviewItems(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_RESEARCH_GALLERY_KEY) {
+          setLocalGalleryItems(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_DELETED_GALLERY_IDS_KEY) {
+          setDeletedGalleryIds(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_RESEARCH_INFO_KEY) {
+          setLocalInformationItems(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_DELETED_INFO_IDS_KEY) {
+          setDeletedInformationIds(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_PROFILES_KEY) {
+          setLocalProfiles(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_DELETED_PROFILE_IDS_KEY) {
+          setDeletedProfileIds(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_PUBLISHED_JOURNALS_KEY) {
+          setLocalJournals(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_DELETED_JOURNAL_IDS_KEY) {
+          setDeletedJournalIds(JSON.parse(e.newValue));
+        } else if (e.key === LOCAL_PORTAL_LOGO_KEY && e.newValue.trim()) {
+          setPortalLogoUrl(e.newValue);
+        }
+        setLastSyncedTime(
+          new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          })
+        );
+        setCloudSyncState('synced');
+      } catch {
+        // ignore malformed external storage payload
+      } finally {
+        window.setTimeout(() => {
+          isApplyingStorageSyncRef.current = false;
+        }, 50);
+      }
+    };
+    window.addEventListener('storage', handleStorageSync);
+    return () => window.removeEventListener('storage', handleStorageSync);
+  }, []);
+
+  // Guarantee immediate local flush before tab switch or preview reload
+  useEffect(() => {
+    const flushPendingChanges = () => {
+      try {
+        localStorage.setItem(LOCAL_RESEARCH_OVERRIDES_KEY, JSON.stringify(localResearches));
+        localStorage.setItem(LOCAL_DELETED_RESEARCH_IDS_KEY, JSON.stringify(deletedResearchIds));
+        localStorage.setItem(LOCAL_OVERVIEW_ITEMS_KEY, JSON.stringify(localOverviewItems));
+        localStorage.setItem(LOCAL_RESEARCH_GALLERY_KEY, JSON.stringify(localGalleryItems));
+        localStorage.setItem(LOCAL_DELETED_GALLERY_IDS_KEY, JSON.stringify(deletedGalleryIds));
+        localStorage.setItem(LOCAL_RESEARCH_INFO_KEY, JSON.stringify(localInformationItems));
+        localStorage.setItem(LOCAL_DELETED_INFO_IDS_KEY, JSON.stringify(deletedInformationIds));
+        localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(localProfiles));
+        localStorage.setItem(LOCAL_DELETED_PROFILE_IDS_KEY, JSON.stringify(deletedProfileIds));
+        localStorage.setItem(LOCAL_PUBLISHED_JOURNALS_KEY, JSON.stringify(localJournals));
+        localStorage.setItem(LOCAL_DELETED_JOURNAL_IDS_KEY, JSON.stringify(deletedJournalIds));
+        localStorage.setItem(LOCAL_PORTAL_LOGO_KEY, portalLogoUrl);
+      } catch {
+        // ignore storage quota errors
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') flushPendingChanges();
+    };
+    window.addEventListener('pagehide', flushPendingChanges);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flushPendingChanges);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [
+    localResearches,
+    deletedResearchIds,
+    localOverviewItems,
+    localGalleryItems,
+    deletedGalleryIds,
+    localInformationItems,
+    deletedInformationIds,
+    localProfiles,
+    deletedProfileIds,
+    localJournals,
+    deletedJournalIds,
+    portalLogoUrl,
+  ]);
+
+  useEffect(() => {
     hasMountedRef.current = true;
     return () => {
       if (syncTimerRef.current) {
         window.clearTimeout(syncTimerRef.current);
+      }
+      if (cloudAutoSyncTimerRef.current) {
+        window.clearTimeout(cloudAutoSyncTimerRef.current);
       }
     };
   }, []);
@@ -2684,59 +2842,21 @@ export default function App() {
   };
 
   // Sync All Local Changes & Baseline Records to Firestore so Published Data is 100% Intact
-  const handleSyncBaselineToCloud = async () => {
+  const syncPortalToCloud = async (silent = false) => {
+    if (cloudSyncInFlightRef.current) return;
+    cloudSyncInFlightRef.current = true;
     setCloudSyncState('syncing');
-    const writerUid = sanitizeId(
-      auth.currentUser?.uid || currentUser?.uid || 'bnhs_portal_admin'
-    );
+    try {
+      const writerUid = sanitizeId(
+        auth.currentUser?.uid || currentUser?.uid || 'bnhs_portal_admin'
+      );
 
-    // 1. Sync any localResearches created or edited locally
-    for (const item of localResearches) {
-      if (deletedResearchIds.includes(item.id)) continue;
-      const cleanId = sanitizeId(item.id);
-      const docPath = `researches/${cleanId}`;
-      try {
-        await setDoc(doc(db, 'researches', cleanId), {
-          portalId: 'bnhs',
-          title: item.title.slice(0, 300),
-          division: item.division,
-          category: item.category.slice(0, 120),
-          subcategory: (item.subcategory || '').slice(0, 120),
-          abstract: item.abstract.slice(0, 4000),
-          keywords: (item.keywords || '').slice(0, 300),
-          authors: item.authors.slice(0, 300),
-          authorRole: item.authorRole,
-          adviser: (item.adviser || '').slice(0, 160),
-          departmentOrGrade: (item.departmentOrGrade || '').slice(0, 120),
-          schoolYear: (item.schoolYear || '2025-2026').slice(0, 20),
-          status: item.status,
-          methodology: (item.methodology || '').slice(0, 1500),
-          keyFindings: (item.keyFindings || '').slice(0, 2000),
-          attachmentName: (item.attachmentName || '').slice(0, 260),
-          attachmentType: (item.attachmentType || '').slice(0, 100),
-          attachmentSize: Number(item.attachmentSize || 0),
-          fileDocId: (item.fileDocId || '').slice(0, 128),
-          driveUrl: (item.driveUrl || '').slice(0, 500),
-          evaluationScore: Number(item.evaluationScore || 0),
-          evaluationRemarks: (item.evaluationRemarks || '').slice(0, 1500),
-          evaluatedBy: (item.evaluatedBy || '').slice(0, 160),
-          authorUid: sanitizeId(item.authorUid || writerUid),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch {
-        // ignore
-      }
-    }
-
-    // 2. Sync baseline research records not yet in Firestore
-    for (const item of INITIAL_BNHS_RESEARCHES) {
-      if (deletedResearchIds.includes(item.id)) continue;
-      const exists = cloudResearches.some((c) => c.id === item.id);
-      if (!exists) {
-        const docPath = `researches/${item.id}`;
+      // 1. Sync any localResearches created or edited locally
+      for (const item of localResearches) {
+        if (deletedResearchIds.includes(item.id)) continue;
+        const cleanId = sanitizeId(item.id);
         try {
-          await setDoc(doc(db, 'researches', item.id), {
+          await setDoc(doc(db, 'researches', cleanId), {
             portalId: 'bnhs',
             title: item.title.slice(0, 300),
             division: item.division,
@@ -2755,161 +2875,233 @@ export default function App() {
             attachmentName: (item.attachmentName || '').slice(0, 260),
             attachmentType: (item.attachmentType || '').slice(0, 100),
             attachmentSize: Number(item.attachmentSize || 0),
-            fileDocId: '',
+            fileDocId: (item.fileDocId || '').slice(0, 128),
             driveUrl: (item.driveUrl || '').slice(0, 500),
             evaluationScore: Number(item.evaluationScore || 0),
             evaluationRemarks: (item.evaluationRemarks || '').slice(0, 1500),
             evaluatedBy: (item.evaluatedBy || '').slice(0, 160),
-            authorUid: writerUid,
+            authorUid: sanitizeId(item.authorUid || writerUid),
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, docPath);
+        } catch {
+          // ignore
         }
       }
-    }
 
-    // 3. Sync researcher profiles
-    for (const prof of [...INITIAL_BNHS_RESEARCHERS, ...localProfiles]) {
-      if (deletedProfileIds.includes(prof.id)) continue;
-      const cleanId = sanitizeId(prof.id);
-      const isLocalOverride = localProfiles.some((lp) => sanitizeId(lp.id) === cleanId);
-      const exists = cloudProfiles.some((p) => p.id === cleanId);
-      if (!exists || isLocalOverride) {
-        const docPath = `researchers/${cleanId}`;
+      // 2. Sync baseline research records not yet in Firestore
+      for (const item of INITIAL_BNHS_RESEARCHES) {
+        if (deletedResearchIds.includes(item.id)) continue;
+        const exists = cloudResearches.some((c) => c.id === item.id);
+        if (!exists) {
+          const docPath = `researches/${item.id}`;
+          try {
+            await setDoc(doc(db, 'researches', item.id), {
+              portalId: 'bnhs',
+              title: item.title.slice(0, 300),
+              division: item.division,
+              category: item.category.slice(0, 120),
+              subcategory: (item.subcategory || '').slice(0, 120),
+              abstract: item.abstract.slice(0, 4000),
+              keywords: (item.keywords || '').slice(0, 300),
+              authors: item.authors.slice(0, 300),
+              authorRole: item.authorRole,
+              adviser: (item.adviser || '').slice(0, 160),
+              departmentOrGrade: (item.departmentOrGrade || '').slice(0, 120),
+              schoolYear: (item.schoolYear || '2025-2026').slice(0, 20),
+              status: item.status,
+              methodology: (item.methodology || '').slice(0, 1500),
+              keyFindings: (item.keyFindings || '').slice(0, 2000),
+              attachmentName: (item.attachmentName || '').slice(0, 260),
+              attachmentType: (item.attachmentType || '').slice(0, 100),
+              attachmentSize: Number(item.attachmentSize || 0),
+              fileDocId: '',
+              driveUrl: (item.driveUrl || '').slice(0, 500),
+              evaluationScore: Number(item.evaluationScore || 0),
+              evaluationRemarks: (item.evaluationRemarks || '').slice(0, 1500),
+              evaluatedBy: (item.evaluatedBy || '').slice(0, 160),
+              authorUid: writerUid,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          } catch (error) {
+            if (!silent) {
+              handleFirestoreError(error, OperationType.CREATE, docPath);
+            }
+          }
+        }
+      }
+
+      // 3. Sync researcher profiles
+      for (const prof of [...INITIAL_BNHS_RESEARCHERS, ...localProfiles]) {
+        if (deletedProfileIds.includes(prof.id)) continue;
+        const cleanId = sanitizeId(prof.id);
+        const isLocalOverride = localProfiles.some((lp) => sanitizeId(lp.id) === cleanId);
+        const exists = cloudProfiles.some((p) => p.id === cleanId);
+        if (!exists || isLocalOverride) {
+          const docPath = `researchers/${cleanId}`;
+          try {
+            await setDoc(doc(db, 'researchers', cleanId), {
+              portalId: 'bnhs',
+              uid: sanitizeId(prof.uid || writerUid),
+              fullName: prof.fullName.slice(0, 160),
+              role: prof.role,
+              departmentOrStrand: prof.departmentOrStrand.slice(0, 120),
+              gradeOrPosition: prof.gradeOrPosition.slice(0, 100),
+              specialization: (prof.specialization || '').slice(0, 250),
+              bio: (prof.bio || '').slice(0, 1000),
+              institutionIdCode: (prof.institutionIdCode || '').slice(0, 60),
+              driveFolderUrl: (prof.driveFolderUrl || '').slice(0, 500),
+              photoUrl: (prof.photoUrl || '').slice(0, 750000),
+              photoDriveUrl: (prof.photoDriveUrl || '').slice(0, 500),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          } catch (error) {
+            if (!silent) {
+              handleFirestoreError(error, OperationType.CREATE, docPath);
+            }
+          }
+        }
+      }
+
+      // 4. Sync Overview items
+      for (const ov of activeOverviewItems) {
+        const cleanId = sanitizeId(ov.id);
         try {
-          await setDoc(doc(db, 'researchers', cleanId), {
+          await setDoc(doc(db, 'overview_items', cleanId), {
             portalId: 'bnhs',
-            uid: sanitizeId(prof.uid || writerUid),
-            fullName: prof.fullName.slice(0, 160),
-            role: prof.role,
-            departmentOrStrand: prof.departmentOrStrand.slice(0, 120),
-            gradeOrPosition: prof.gradeOrPosition.slice(0, 100),
-            specialization: (prof.specialization || '').slice(0, 250),
-            bio: (prof.bio || '').slice(0, 1000),
-            institutionIdCode: (prof.institutionIdCode || '').slice(0, 60),
-            driveFolderUrl: (prof.driveFolderUrl || '').slice(0, 500),
-            photoUrl: (prof.photoUrl || '').slice(0, 750000),
-            photoDriveUrl: (prof.photoDriveUrl || '').slice(0, 500),
+            itemType: ov.itemType,
+            code: (ov.code || 'BNHS-OV').slice(0, 40),
+            title: (ov.title || 'Barobo National High School').slice(0, 300),
+            subtitle: (ov.subtitle || 'BNHS Research Portal').slice(0, 200),
+            description: (ov.description || 'Barobo National High School Research Portal').slice(0, 2000),
+            imageUrl: (ov.imageUrl || '').slice(0, 750000),
+            divisionLink: ov.divisionLink,
+            displayOrder: Number(ov.displayOrder || 0),
+            isDeleted: Boolean(ov.isDeleted),
+            updatedByUid: writerUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, docPath);
+        } catch {
+          // ignore
         }
       }
-    }
 
-    // 4. Sync Overview items
-    for (const ov of activeOverviewItems) {
-      const cleanId = sanitizeId(ov.id);
-      try {
-        await setDoc(doc(db, 'overview_items', cleanId), {
-          portalId: 'bnhs',
-          itemType: ov.itemType,
-          code: (ov.code || 'BNHS-OV').slice(0, 40),
-          title: (ov.title || 'Barobo National High School').slice(0, 300),
-          subtitle: (ov.subtitle || 'BNHS Research Portal').slice(0, 200),
-          description: (ov.description || 'Barobo National High School Research Portal').slice(0, 2000),
-          imageUrl: (ov.imageUrl || '').slice(0, 750000),
-          divisionLink: ov.divisionLink,
-          displayOrder: Number(ov.displayOrder || 0),
-          isDeleted: Boolean(ov.isDeleted),
-          updatedByUid: writerUid,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch {
-        // ignore
+      // 5. Sync Research Gallery items
+      for (const gal of activeGalleryItems) {
+        const cleanId = sanitizeId(gal.id);
+        try {
+          await setDoc(doc(db, 'research_gallery', cleanId), {
+            portalId: 'bnhs',
+            title: (gal.title || '').slice(0, 300),
+            caption: (gal.caption || '').slice(0, 1000),
+            imageUrl: (gal.imageUrl || '').slice(0, 750000),
+            displayOrder: Number(gal.displayOrder || 1),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch {
+          // ignore
+        }
       }
-    }
 
-    // 5. Sync Research Gallery items
-    for (const gal of activeGalleryItems) {
-      const cleanId = sanitizeId(gal.id);
-      try {
-        await setDoc(doc(db, 'research_gallery', cleanId), {
-          portalId: 'bnhs',
-          title: (gal.title || '').slice(0, 300),
-          caption: (gal.caption || '').slice(0, 1000),
-          imageUrl: (gal.imageUrl || '').slice(0, 750000),
-          displayOrder: Number(gal.displayOrder || 1),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch {
-        // ignore
+      // 6. Sync Research Information videos
+      for (const info of activeInformationItems) {
+        const cleanId = sanitizeId(info.id);
+        try {
+          await setDoc(doc(db, 'research_information', cleanId), {
+            portalId: 'bnhs',
+            title: (info.title || '').slice(0, 300),
+            category: (info.category || '').slice(0, 120),
+            description: (info.description || '').slice(0, 3000),
+            videoUrl: (info.videoUrl || '').slice(0, 750000),
+            videoSourceType: (info.videoSourceType || 'youtube').slice(0, 30),
+            imageUrl: (info.imageUrl || '').slice(0, 750000),
+            linkUrl: (info.linkUrl || '').slice(0, 500),
+            displayOrder: Number(info.displayOrder || 1),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch {
+          // ignore
+        }
       }
-    }
 
-    // 6. Sync Research Information videos
-    for (const info of activeInformationItems) {
-      const cleanId = sanitizeId(info.id);
-      try {
-        await setDoc(doc(db, 'research_information', cleanId), {
-          portalId: 'bnhs',
-          title: (info.title || '').slice(0, 300),
-          category: (info.category || '').slice(0, 120),
-          description: (info.description || '').slice(0, 3000),
-          videoUrl: (info.videoUrl || '').slice(0, 750000),
-          videoSourceType: (info.videoSourceType || 'youtube').slice(0, 30),
-          imageUrl: (info.imageUrl || '').slice(0, 750000),
-          linkUrl: (info.linkUrl || '').slice(0, 500),
-          displayOrder: Number(info.displayOrder || 1),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch {
-        // ignore
+      // 7. Sync Published Research Journals
+      for (const jrnl of activePublishedJournals) {
+        const cleanId = sanitizeId(jrnl.id);
+        try {
+          await setDoc(doc(db, 'published_journals', cleanId), {
+            portalId: 'bnhs',
+            title: (jrnl.title || '').slice(0, 300),
+            authors: (jrnl.authors || '').slice(0, 300),
+            authorAffiliation: (jrnl.authorAffiliation || '').slice(0, 200),
+            division: jrnl.division,
+            journalVolume: (jrnl.journalVolume || '').slice(0, 100),
+            issnOrRefCode: (jrnl.issnOrRefCode || '').slice(0, 60),
+            publicationDate: (jrnl.publicationDate || '').slice(0, 30),
+            abstract: (jrnl.abstract || '').slice(0, 4000),
+            keywords: (jrnl.keywords || '').slice(0, 300),
+            keyFindings: (jrnl.keyFindings || '').slice(0, 2000),
+            doiOrExternalLink: (jrnl.doiOrExternalLink || '').slice(0, 500),
+            fileSourceType: jrnl.fileSourceType,
+            fileName: (jrnl.fileName || '').slice(0, 260),
+            fileSizeBytes: Number(jrnl.fileSizeBytes || 0),
+            fileDataUrl: (jrnl.fileDataUrl || '').slice(0, 750000),
+            driveUrl: (jrnl.driveUrl || '').slice(0, 500),
+            driveEmbedUrl: (jrnl.driveEmbedUrl || '').slice(0, 500),
+            citationApa: (jrnl.citationApa || '').slice(0, 500),
+            viewsCount: Number(jrnl.viewsCount || 0),
+            downloadsCount: Number(jrnl.downloadsCount || 0),
+            uploaderUid: (jrnl.uploaderUid || writerUid).slice(0, 128),
+            isBaseline: Boolean(jrnl.isBaseline),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch {
+          // ignore
+        }
       }
-    }
 
-    // 7. Sync Published Research Journals
-    for (const jrnl of activePublishedJournals) {
-      const cleanId = sanitizeId(jrnl.id);
-      try {
-        await setDoc(doc(db, 'published_journals', cleanId), {
-          portalId: 'bnhs',
-          title: (jrnl.title || '').slice(0, 300),
-          authors: (jrnl.authors || '').slice(0, 300),
-          authorAffiliation: (jrnl.authorAffiliation || '').slice(0, 200),
-          division: jrnl.division,
-          journalVolume: (jrnl.journalVolume || '').slice(0, 100),
-          issnOrRefCode: (jrnl.issnOrRefCode || '').slice(0, 60),
-          publicationDate: (jrnl.publicationDate || '').slice(0, 30),
-          abstract: (jrnl.abstract || '').slice(0, 4000),
-          keywords: (jrnl.keywords || '').slice(0, 300),
-          keyFindings: (jrnl.keyFindings || '').slice(0, 2000),
-          doiOrExternalLink: (jrnl.doiOrExternalLink || '').slice(0, 500),
-          fileSourceType: jrnl.fileSourceType,
-          fileName: (jrnl.fileName || '').slice(0, 260),
-          fileSizeBytes: Number(jrnl.fileSizeBytes || 0),
-          fileDataUrl: (jrnl.fileDataUrl || '').slice(0, 750000),
-          driveUrl: (jrnl.driveUrl || '').slice(0, 500),
-          driveEmbedUrl: (jrnl.driveEmbedUrl || '').slice(0, 500),
-          citationApa: (jrnl.citationApa || '').slice(0, 500),
-          viewsCount: Number(jrnl.viewsCount || 0),
-          downloadsCount: Number(jrnl.downloadsCount || 0),
-          uploaderUid: (jrnl.uploaderUid || writerUid).slice(0, 128),
-          isBaseline: Boolean(jrnl.isBaseline),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch {
-        // ignore
+      // 8. Sync Portal Branding Logo (GIF / Image)
+      if (portalLogoUrl && portalLogoUrl.trim()) {
+        try {
+          await setDoc(doc(db, 'portal_settings', 'branding'), {
+            portalId: 'bnhs',
+            logoUrl: portalLogoUrl.slice(0, 750000),
+            logoFileName: 'BNHS_LOGO_animated.gif',
+            logoMimeType: portalLogoUrl.includes('image/gif') || portalLogoUrl.toLowerCase().includes('.gif') ? 'image/gif' : 'image/png',
+            updatedBy: (currentUser?.displayName || 'BNHS Auto-Sync').slice(0, 160),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch {
+          // ignore
+        }
       }
-    }
 
-    setLastSyncedTime(
-      new Date().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-    );
-    setCloudSyncState('synced');
-    showToast('Cloud Synced: All changes are permanently saved to Cloud Database and intact when published.');
+      setLastSyncedTime(
+        new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        })
+      );
+      setCloudSyncState('synced');
+      if (!silent) {
+        showToast('Auto-Sync Complete: All preview changes are saved locally and synchronized to the Cloud Database.');
+      }
+    } finally {
+      cloudSyncInFlightRef.current = false;
+    }
+  };
+
+  autoSyncHandlerRef.current = () => syncPortalToCloud(true);
+
+  const handleSyncBaselineToCloud = async () => {
+    await syncPortalToCloud(false);
   };
 
   // Filtered Research Records for the Active View
@@ -3252,7 +3444,7 @@ export default function App() {
               type="button"
               onClick={handleSyncBaselineToCloud}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-300 hover:text-emerald-200 whitespace-nowrap shrink-0"
-              title="All changes automatically save and sync to the cloud"
+              title="Auto-Sync is active: every change in the preview automatically saves locally and syncs to the Cloud Database. Click to sync immediately."
             >
               {cloudSyncState === 'syncing' ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
@@ -3261,8 +3453,10 @@ export default function App() {
               )}
               <span>
                 {cloudSyncState === 'syncing'
-                  ? 'Cloud Syncing...'
-                  : `Cloud Synced (${lastSyncedTime})`}
+                  ? 'Auto-Syncing...'
+                  : cloudSyncState === 'auto_saved'
+                  ? `Auto-Saved (${lastSyncedTime})`
+                  : `Auto-Sync ON · Saved (${lastSyncedTime})`}
               </span>
             </button>
 
@@ -4479,33 +4673,55 @@ export default function App() {
         {/* ==================== 5. RESEARCHERS & ADMINISTRATOR WORKFLOW VIEW ==================== */}
         {activeSection === 'directory' && (
           <section className="space-y-6">
-            {/* Sub-Navigation Switcher between Researcher Profiles & Admin Evaluation Dashboard */}
-            <div className="flex items-center justify-between flex-wrap gap-4 border-b border-zinc-200 pb-4">
-              <div className="flex items-center gap-2">
+            {/* Sub-Navigation Switcher centered vertically in one column */}
+            <div className="flex flex-col items-center justify-center border-b border-zinc-200 pb-4">
+              <div className="mx-auto flex flex-col items-stretch gap-2.5 w-full sm:max-w-lg">
                 <button
                   type="button"
                   onClick={() => setDirectoryTab('researchers')}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                  className={`w-full inline-flex items-center justify-center gap-2.5 px-4 py-2.5 text-xs font-semibold transition-colors text-center ${
                     directoryTab === 'researchers'
-                      ? 'bg-[#6B1420] text-white'
+                      ? 'bg-[#6B1420] text-white shadow-xs'
                       : 'bg-white border border-zinc-300 text-zinc-700 hover:bg-zinc-50'
                   }`}
                 >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Teacher &amp; Student Researcher Profiles ({allProfiles.length})</span>
+                  <Users className="w-4 h-4 shrink-0" />
+                  <span className="truncate">
+                    Teacher &amp; Student Researcher Profiles
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 text-[10px] font-mono shrink-0 ${
+                      directoryTab === 'researchers'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-zinc-100 text-zinc-600'
+                    }`}
+                  >
+                    {allProfiles.length}
+                  </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setDirectoryTab('admin')}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                  className={`w-full inline-flex items-center justify-center gap-2.5 px-4 py-2.5 text-xs font-semibold transition-colors text-center ${
                     directoryTab === 'admin'
-                      ? 'bg-[#6B1420] text-white'
+                      ? 'bg-[#6B1420] text-white shadow-xs'
                       : 'bg-white border border-zinc-300 text-zinc-700 hover:bg-zinc-50'
                   }`}
                 >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Administrator Dashboard, Overview Manager &amp; Evaluation</span>
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span className="truncate">
+                    Administrator Dashboard, Overview Manager &amp; Evaluation
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 text-[10px] font-mono shrink-0 ${
+                      directoryTab === 'admin'
+                        ? 'bg-amber-400/25 text-amber-200'
+                        : 'bg-rose-50 text-[#6B1420]'
+                    }`}
+                  >
+                    Admin
+                  </span>
                 </button>
               </div>
             </div>
